@@ -63,23 +63,20 @@ describe('Flight operations dashboard', () => {
     expect(rain).toHaveAttribute('aria-checked', 'true');
     fireEvent.change(slider, { target: { value: '600' } });
     expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).toHaveTextContent('Không tuân thủ CTOT');
-    expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).toHaveTextContent('Đang chờ CTOT');
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).toHaveTextContent('Đang chờ CTOT'));
     expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).toHaveTextContent('Đang chờ TSAT');
     fireEvent.click(rain);
     expect(rain).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).toHaveTextContent('Không tuân thủ CTOT');
     expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).not.toHaveTextContent('Đang chờ CTOT');
     expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).not.toHaveTextContent('Đang chờ TSAT');
-    expect(dclBoard).toHaveTextContent('TSAT REVISED');
-    const revised = document.querySelector('.time-cell[title*="TSAT mới"]')?.getAttribute('title')?.match(/TSAT mới (\d{2}):(\d{2})/);
-    expect(revised).not.toBeNull();
-    const startupMinute = Number(revised![1]) * 60 + Number(revised![2]);
-    let takeoffVisible = false;
-    for (let minute = startupMinute; minute <= startupMinute + 30 && !takeoffVisible; minute += 1) {
+    await waitFor(() => expect(dclBoard).toHaveTextContent('AWAIT NEW TSAT'));
+    expect(dclBoard).not.toHaveTextContent('TSAT REVISED');
+    expect(document.querySelector('.time-cell[title*="TSAT mới"]')).toBeNull();
+    for (const minute of [610, 700, 1000]) {
       fireEvent.change(slider, { target: { value: String(minute) } });
-      takeoffVisible = screen.queryByRole('button', { name: /VNA123.*cất cánh 25L/i }) !== null;
+      expect(screen.queryByRole('button', { name: /VNA123.*cất cánh 25L/i })).toBeNull();
     }
-    expect(takeoffVisible).toBe(true);
     fireEvent.change(slider, { target: { value: '1440' } });
     expect(screen.getByText('TỔNG THỜI GIAN CHỜ').closest('article')?.querySelector('.kpi-value')).toHaveTextContent(/^0 phút$/);
   });

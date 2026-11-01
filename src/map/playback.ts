@@ -46,7 +46,7 @@ export function departurePosition(flight: TimelineItem, time: number, queueIndex
         point: getStandPoint(weather.returnStand), phase: `không tuân thủ CTOT · chờ lượt khởi hành tại stand ${weather.returnStand}`, rotation: 0,
       };
     }
-    if (missed && !weather.returnStand && time < flight.runwayEntryStart) return {
+    if (missed && !weather.heldAtStand && !weather.atStand && !weather.returnStand && time < flight.runwayEntryStart) return {
       ...departurePosition(weather.previous, Math.min(time, weather.previous.runwayEntryStart - 1), queueIndex, runway),
       ...(time >= weather.groundReadyAt ? { point: weatherHoldingPosition(flight, queueIndex, runway) } : {}),
       phase: 'chờ lượt vào 25L',

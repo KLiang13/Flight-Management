@@ -39,8 +39,13 @@ export function curve(a: MapPoint, b: MapPoint, c: MapPoint, d: MapPoint, steps 
   });
 }
 
+const pathLengthCache = new WeakMap<MapPoint[], number>();
 export function pathLength(points: MapPoint[]): number {
-  return points.slice(1).reduce((sum, point, index) => sum + Math.hypot(point.x - points[index].x, point.y - points[index].y), 0);
+  const cached = pathLengthCache.get(points);
+  if (cached !== undefined) return cached;
+  const length = points.slice(1).reduce((sum, point, index) => sum + Math.hypot(point.x - points[index].x, point.y - points[index].y), 0);
+  pathLengthCache.set(points, length);
+  return length;
 }
 
 

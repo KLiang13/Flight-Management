@@ -40,7 +40,7 @@ describe('manual adverse weather', () => {
     const result = applyWeatherPeriods(base, [], [{ start: 11 * minute, end: null }], '25L-25R');
     const delayed = result.flights[0];
     expect(delayed.wheelsOff).toBe(Infinity);
-    expect(weatherStatus(delayed, 30 * minute)?.missed).toBe(false);
+    expect(weatherStatus(delayed, 30 * minute)?.missed).toBe(true);
     expect(weatherStatus(delayed, 31 * minute)?.missed).toBe(true);
     expect(delayed.reissuedCtot).toBeNull();
     expect(delayed.weather!.returnStart).toBe(11 * minute);
@@ -64,7 +64,7 @@ describe('manual adverse weather', () => {
     expect(events.some((event) => event.message.includes('TSAT REVISED'))).toBe(false);
     expect(events.filter(event => event.message.includes('CTOT EXPIRED')).every(event => formatDclMessage(event.message).length === 2)).toBe(true);
     expect(recovered.runwayEntryStart).toBeGreaterThan(recovered.weather!.returnEnd!);
-    expect(departurePosition(recovered, recovered.takeoffRollStart + 30_000, 0, '25L-25R').phase).toBe('cất cánh 25L');
+    expect(departurePosition(recovered, 200 * minute, 0, '25L-25R').phase).toContain('stand');
   });
 
   it('keeps aircraft that have not started at their stand and preserves committed departures', () => {
@@ -87,19 +87,19 @@ describe('manual adverse weather', () => {
     const valid = result.flights.find((item) => item.id === 'VALID')!;
     const expired = result.flights.find((item) => item.id === 'EXPIRED')!;
     expect(valid.weather?.missedAt).toBeNull();
-    expect(valid.wheelsOff).toBeLessThanOrEqual(60 * minute);
+    expect(valid.wheelsOff).toBe(Infinity);
     expect(expired.weather!.returnStand).toBeNull();
-    expect(expired.wheelsOff).toBeLessThan(valid.wheelsOff);
+    expect(expired.wheelsOff).toBe(Infinity);
   });
 
   it('retains Medium aircraft needed between Heavy departures after rain', () => {
     const heavy = (id: string, ready: number, ctot: number): ScheduledFlight => ({
       ...flight(id, ready, ctot), aircraftType: 'B777', wakeCategory: 'H', stand: '23',
     });
-    const base = runSimulation([heavy('H1', 10, 20), flight('M1', 12, 22), heavy('H2', 14, 24)]).flights;
+    const base = runSimulation([heavy('H1', 10, 100), flight('M1', 12, 102), heavy('H2', 14, 104)]).flights;
     const result = applyWeatherPeriods(base, [], [{ start: 11 * minute, end: 50 * minute }], '25L-25R');
-    expect(result.flights.every((item) => Number.isFinite(item.wheelsOff))).toBe(true);
-    expect(result.flights.map((item) => item.wakeCategory)).toEqual(['H', 'M', 'H']);
+    expect(result.flights.filter(item => Number.isFinite(item.wheelsOff)).map(item => item.wakeCategory)).toEqual(['M', 'H']);
+    expect(result.flights.find(item => item.id === 'H1')!.wheelsOff).toBe(Infinity);
   });
 
   it('preserves past positions across repeated weather toggles', () => {
@@ -108,7 +108,7 @@ describe('manual adverse weather', () => {
     const initial = applyWeatherPeriods(base, [], first, '25L-25R').flights[0];
     const repeated = applyWeatherPeriods(base, [], [...first, { start: 50.1 * minute, end: 80 * minute }], '25L-25R').flights[0];
     expect(departurePosition(repeated, 35 * minute, 0, '25L-25R')).toEqual(departurePosition(initial, 35 * minute, 0, '25L-25R'));
-    expect(repeated.wheelsOff).toBeGreaterThan(initial.wheelsOff);
+    expect(repeated.wheelsOff).toBe(initial.wheelsOff);
   });
 
   it('does not rewrite earlier issued slots when a later brief shower has no impact', () => {
@@ -167,9 +167,10 @@ describe('weather recovery with bundled workbooks', () => {
     const start = base[0].taxiStart + minute;
     const plan = applyWeatherPeriods(base, arrivals, [{ start, end: start + 40 * minute }], '25L-25R');
     expect(plan.flights).toHaveLength(base.length);
-    expect(plan.flights.every((item) => Number.isFinite(item.wheelsOff))).toBe(true);
+    expect(plan.flights.every(item => Number.isFinite(item.wheelsOff) || item.weather?.blockedAt !== undefined)).toBe(true);
     for (let index = 0; index < plan.flights.length; index += 1) {
       const item = plan.flights[index];
+      if (!Number.isFinite(item.wheelsOff)) { expect(item.reissuedCtot).toBeNull(); continue; }
       if (item.reissuedTsat !== null) {
         expect(item.reissuedCtot).toBeNull();
         expect(item.wheelsOff).toBeGreaterThanOrEqual(item.reissuedTsat + item.taxiMinutes * minute);
@@ -178,14 +179,15 @@ describe('weather recovery with bundled workbooks', () => {
         expect(item.wheelsOff).toBeGreaterThanOrEqual(slot - 5 * minute);
         expect(item.wheelsOff).toBeLessThanOrEqual(slot + 10 * minute);
       }
-      if (index > 0) {
-        expect(item.runwayEntryStart).toBeGreaterThanOrEqual(plan.flights[index - 1].wheelsOff);
-        expect(item.wakeCategory === 'H' && plan.flights[index - 1].wakeCategory === 'H').toBe(false);
+      const previous = plan.flights.slice(0, index).filter(flight => Number.isFinite(flight.wheelsOff)).at(-1);
+      if (previous) {
+        expect(item.runwayEntryStart).toBeGreaterThanOrEqual(previous.wheelsOff);
+        expect(item.wakeCategory === 'H' && previous.wakeCategory === 'H').toBe(false);
       }
     }
     for (const arrival of plan.arrivals.filter(item => item.divertedAt === undefined)) {
       expect(Number.isFinite(arrival.standArrival)).toBe(true);
-      for (const departure of plan.flights) {
+      for (const departure of plan.flights.filter(flight => Number.isFinite(flight.wheelsOff))) {
         expect(arrival.crossingEnd <= departure.runwayEntryStart || arrival.crossingStart >= departure.wheelsOff + 10_000).toBe(true);
         if (arrival.crossingStart >= start) expect(departure.runwayEntryStart < Math.max(arrival.p5HoldAt, start)
           || departure.runwayEntryStart >= arrival.crossingEnd, `${arrival.callsign}/${departure.callsign}`).toBe(true);

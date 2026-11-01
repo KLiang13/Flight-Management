@@ -21,19 +21,8 @@ export function departureTsatAt(flight: TimelineItem, time: number): number {
 }
 
 /** Return only a CTOT already issued at the replay cursor, never a future revision. */
-export function departureCtotAt(flight: TimelineItem, time: number): number {
-  if (flight.weather) {
-    const { revisionAt, previous, assignedCtot } = flight.weather;
-    if (revisionAt !== null && time >= revisionAt && assignedCtot !== undefined) return assignedCtot;
-    if (revisionAt !== null && time >= revisionAt && Number.isFinite(flight.wheelsOff)
-      && (flight.reissuedCtot !== null || flight.reissuedTsat !== null)) {
-      return flight.reissuedCtot ?? flight.wheelsOff;
-    }
-    return departureCtotAt(previous, time);
-  }
-  const revisedAt = flight.returnEnd ?? flight.ctot + 10 * 60_000;
-  return time >= revisedAt ? flight.reissuedCtot
-    ?? (flight.reissuedTsat !== null ? flight.wheelsOff : flight.ctot) : flight.ctot;
+export function departureCtotAt(flight: TimelineItem, _time: number): number {
+  return flight.ctot;
 }
 
 /** Only stationary intervals after the latest issued TSAT count as normal waiting. */

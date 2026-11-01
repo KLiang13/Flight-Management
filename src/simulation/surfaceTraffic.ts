@@ -4,6 +4,7 @@ import { taxiRoutes, pathLength, distanceAlongPathToPoint, STAND_POINTS } from '
 import { getArrivalRoutePoints, getRunwaySegment, getNearestReturnStand } from '../map/airfieldGeometry';
 import { taxiDuration, landingRollDuration, RUNWAY_ENTRY_MS, TAKEOFF_ROLL_MS, RUNWAY_CLEARANCE_MS, takeoffDistanceProgress } from './movementPhysics';
 import type { TimelineItem } from './runSimulation';
+import { enforceSingleCtot } from './weather';
 import type { ArrivalTimelineItem } from './arrivals';
 import { ctotDelayMinutes } from './ctot';
 import { clearanceRequestTime, stationaryWaitMinutesAt, tsatWaitMinutes } from './departureTiming';
@@ -83,7 +84,9 @@ const leg = (start: number, end: number, points: MapPoint[], phase: string): Sur
 const parked = (stand: string, start: number, end: number) => leg(start, end, [STAND_POINTS[stand]], `tại stand ${stand}`);
 
 export function surfacePosition(plan: SurfacePlan, time: number) {
-  const item = plan.legs.find((part) => time < part.end) ?? plan.legs.at(-1)!;
+  let low = 0, high = plan.legs.length - 1;
+  while (low < high) { const middle = (low + high) >>> 1; if (time < plan.legs[middle].end) high = middle; else low = middle + 1; }
+  const item = plan.legs[low];
   const progress = (time - item.start) / Math.max(1, item.end - item.start);
   const point = pointAlongPath(item.points, progress);
   const next = pointAlongPath(item.points, Math.min(1, progress + 0.005));
@@ -92,18 +95,34 @@ export function surfacePosition(plan: SurfacePlan, time: number) {
 }
 
 function planDepartures(departures: TimelineItem[], inbound: ArrivalTimelineItem[], runway: string,
-  reservations: Reservations, crossingRequests: ArrivalTimelineItem[]) {
+  reservations: Reservations, crossingRequests: ArrivalTimelineItem[]): TimelineItem[] {
   let runwayAvailable = -Infinity;
   const servedCrossings = new Set<string>();
   const flights = [...departures].sort((a, b) => a.wheelsOff - b.wheelsOff).map((source) => {
-    if (!Number.isFinite(source.wheelsOff)) return source;
-    let chosen: TimelineItem | undefined;
     const radius = source.wakeCategory === 'H' ? 15 : 9;
-    const standChoices = [source.stand];
+    const international = (stand: string) => Number(stand) >= 9 && Number(stand) <= 16;
+    const otherStands = Object.keys(STAND_POINTS).filter(stand => stand !== source.stand
+      && international(stand) === international(source.stand)
+      && (international(stand) || source.wakeCategory !== 'H' || Number(stand) >= 23 && Number(stand) <= 34))
+      .sort((a, b) => Math.hypot(STAND_POINTS[a].x - STAND_POINTS[source.stand].x, STAND_POINTS[a].y - STAND_POINTS[source.stand].y)
+        - Math.hypot(STAND_POINTS[b].x - STAND_POINTS[source.stand].x, STAND_POINTS[b].y - STAND_POINTS[source.stand].y));
+    const standChoices = [source.stand, ...otherStands];
+    if (!Number.isFinite(source.wheelsOff)) {
+      const visibleFrom = source.tsat - 20 * 60_000;
+      for (const stand of standChoices) {
+        const legs = [parked(stand, visibleFrom, Infinity)];
+        if (!reservations.available(legs, radius, source.id)) continue;
+        reservations.reserve(legs, radius, source.id);
+        const plan = { visibleFrom, visibleUntil: Infinity, legs, route: 'suspended' };
+        return { ...source, stand, surfacePlan: plan, weather: source.weather ? { ...source.weather, groundStand: stand, surfacePlan: plan } : undefined };
+      }
+      return { ...source, weather: source.weather ? { ...source.weather, offApron: true } : undefined };
+    }
+    let chosen: TimelineItem | undefined;
     const dayStart = new Date(source.readyAt).setHours(0, 0, 0, 0);
     let delay = Math.max(0, runwayAvailable - source.runwayEntryStart);
     // Delay is allocated before pushback, never by freezing an aircraft on a junction.
-    while (!chosen && delay < MAX_RESCHEDULE_MS) {
+    while (!chosen && delay < MAX_RESCHEDULE_MS && delay <= Math.max(0, source.ctot + 600_000 - source.wheelsOff)) {
       let nextDelay = Infinity;
       for (const stand of standChoices) {
         for (const route of taxiRoutes(stand)) {
@@ -198,7 +217,7 @@ function planDepartures(departures: TimelineItem[], inbound: ArrivalTimelineItem
       }
       if (!chosen) delay = Number.isFinite(nextDelay) ? nextDelay : delay + 10_000;
     }
-    if (!chosen) throw new Error(`Không tìm được đường lăn an toàn cho ${source.callsign} trong 48 giờ. Hãy kiểm tra mật độ lịch và vị trí đỗ.`);
+    if (!chosen) return planDepartures(enforceSingleCtot([{ ...source, missedCtot: true }]), inbound, runway, reservations, crossingRequests)[0];
     return chosen;
   });
   return flights;
@@ -208,12 +227,18 @@ function planArrivals(inbound: ArrivalTimelineItem[], flights: TimelineItem[], r
   prioritizeCrossings = false) {
   let landingAvailable = -Infinity;
   const arrivals = [...inbound].sort((a, b) => a.touchdown - b.touchdown).map((source) => {
+    if (source.divertedAt !== undefined) return source;
     let chosen: ArrivalTimelineItem | undefined;
     let delay = arrivalDelayForBookedRolls(source, Math.max(0, landingAvailable - source.touchdown), flights.map(flight => flight.takeoffRollStart));
     while (!chosen && delay < MAX_RESCHEDULE_MS) {
       let nextDelay = Infinity;
-      for (const branch of ['P4', 'P5'] as const) {
-        const route = getArrivalRoutePoints(source.stand, branch);
+      const international = (stand: string) => Number(stand) >= 9 && Number(stand) <= 16;
+      const standChoices = [source.stand, ...Object.keys(STAND_POINTS).filter(stand => stand !== source.stand
+        && international(stand) === international(source.stand)
+        && (international(stand) || source.wakeCategory !== 'H' || Number(stand) >= 23 && Number(stand) <= 34))];
+      const choices = standChoices.flatMap(stand => (['P4', 'P5'] as const).map(branch => ({ stand, branch })));
+      for (const { stand, branch } of choices) {
+        const route = getArrivalRoutePoints(stand, branch);
         const landingEnd = source.touchdown + delay + landingRollDuration(pathLength(route.landing), source.approachSpeedKts);
         const p5HoldAt = landingEnd + taxiDuration(pathLength(route.toHold));
         // Recompute the crossing against the final runway schedule. Carrying
@@ -229,23 +254,24 @@ function planArrivals(inbound: ArrivalTimelineItem[], flights: TimelineItem[], r
           leg(landingEnd, p5HoldAt, route.toHold, `lăn theo ${branch} đến điểm chờ P5`),
           leg(p5HoldAt, crossingStart, [route.toHold.at(-1)!], 'dừng trước 25L tại P5'),
           leg(crossingStart, crossingEnd, route.fromHold.slice(0, 3), 'cắt qua 25L'),
-          leg(crossingEnd, standArrival, route.fromHold.slice(2), `lăn vào stand ${source.stand}`),
-          parked(source.stand, standArrival, standArrival + 45 * 60_000)];
+          leg(crossingEnd, standArrival, route.fromHold.slice(2), `lăn vào stand ${stand}`),
+          parked(stand, standArrival, standArrival + 45 * 60_000)];
         const radius = source.wakeCategory === 'H' ? 15 : 9;
         if (!reservations.available(legs, radius)) {
           nextDelay = Math.min(nextDelay, delay + reservations.lastConflictDelay);
           continue;
         }
         reservations.reserve(legs, radius);
-        chosen = { ...source, approachStart: source.approachStart + delay, touchdown: source.touchdown + delay, landingEnd,
+        chosen = { ...source, stand, approachStart: source.approachStart + delay, touchdown: source.touchdown + delay, landingEnd,
           p5HoldAt, crossingStart, crossingEnd, standArrival, exitBranch: branch,
           surfacePlan: { visibleFrom: source.approachStart + delay, visibleUntil: legs.at(-1)!.end, legs, route: branch } };
         landingAvailable = landingEnd + 60_000;
         break;
       }
-      if (!chosen) delay = arrivalDelayForBookedRolls(source, Number.isFinite(nextDelay) ? nextDelay : delay + STEP, flights.map(flight => flight.takeoffRollStart));
+      if (!chosen && !Number.isFinite(nextDelay)) return { ...source, divertedAt: source.approachStart };
+      if (!chosen) delay = arrivalDelayForBookedRolls(source, nextDelay, flights.map(flight => flight.takeoffRollStart));
     }
-    if (!chosen) throw new Error(`Không tìm được đường lăn an toàn cho ${source.callsign}.`);
+    if (!chosen) return { ...source, divertedAt: source.approachStart };
     return chosen;
   });
   return arrivals;
@@ -260,6 +286,7 @@ export function planSurfaceTraffic(departures: TimelineItem[], inbound: ArrivalT
   // after the departure already on 25L; subsequent departures then plan around it.
   const reservations = new Reservations();
   const arrivals = planArrivals(previewArrivals, previewFlights, reservations, true);
-  const flights = planDepartures(departures, arrivals, runway, reservations, arrivals);
+  const accepted = arrivals.filter(arrival => arrival.divertedAt === undefined);
+  const flights = planDepartures(departures, accepted, runway, reservations, accepted);
   return { flights, arrivals };
 }

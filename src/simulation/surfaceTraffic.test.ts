@@ -59,7 +59,9 @@ describe('calibrated surface traffic', () => {
     expect(plan.flights).toHaveLength(70); expect(plan.arrivals).toHaveLength(30);
     expect(plan.flights.reduce((sum, flight) => sum + flight.waitMinutes, 0)).toBeLessThan(1500);
     for (const flight of plan.flights) {
+      if (flight.weather?.offApron) continue;
       expect(flight.surfacePlan).toBeDefined();
+      if (!Number.isFinite(flight.wheelsOff)) { expect(flight.reissuedCtot).toBeNull(); continue; }
       expect(flight.wheelsOff - flight.takeoffRollStart).toBeCloseTo(TAKEOFF_ROLL_MS, 2);
       if (flight.forceCtotMiss) {
         expect(flight.missedCtot).toBe(true);
@@ -70,14 +72,14 @@ describe('calibrated surface traffic', () => {
         expect(flight.secondTaxiStart).toBeGreaterThan(flight.returnEnd!);
       }
     }
-    for (const arrival of plan.arrivals) for (const departure of plan.flights) {
+    for (const arrival of plan.arrivals.filter(flight => flight.divertedAt === undefined)) for (const departure of plan.flights.filter(flight => Number.isFinite(flight.wheelsOff))) {
       expect(arrival.crossingEnd <= departure.runwayEntryStart || arrival.crossingStart >= departure.wheelsOff).toBe(true);
       expect(departure.runwayEntryStart < arrival.p5HoldAt || departure.runwayEntryStart >= arrival.crossingEnd).toBe(true);
       expect(departure.takeoffRollStart < arrival.approachStart || departure.takeoffRollStart >= arrivalThresholdClearAt(arrival)).toBe(true);
     }
-    const all = [...plan.flights, ...plan.arrivals];
+    const all = [...plan.flights.filter(flight => !flight.weather?.offApron), ...plan.arrivals.filter(flight => flight.divertedAt === undefined)];
     const start = Math.min(...all.map((flight) => flight.surfacePlan!.visibleFrom));
-    const end = Math.max(...all.map((flight) => flight.surfacePlan!.visibleUntil));
+    const end = start + 24 * 60 * 60_000;
     for (let time = start; time < end; time += 1000) {
       const active = all.filter((flight) => time >= flight.surfacePlan!.visibleFrom && time < flight.surfacePlan!.visibleUntil);
       const positions = active.map((flight) => ({ id: flight.id, ...('wheelsOff' in flight ? departurePosition(flight, time, 0, '25L') : arrivalPosition(flight, time)) }));

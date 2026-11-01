@@ -13,7 +13,7 @@ import { createDclEvents, formatDclMessage, type DclEvent } from './dcl/dclScena
 import { runSimulation, toScheduledFlights, type SimulationResult, type TimelineItem } from './simulation/runSimulation';
 import { getHoldingPoint, getRunwaySegment, getTaxiRouteDescription, MAP_VIEWBOX } from './map/airfieldGeometry';
 import { arrivalPosition, departurePosition, TAKEOFF_VISIBLE_AFTER_MS } from './map/playback';
-import { planSurfaceTraffic } from './simulation/surfaceTraffic';
+import { planAsync } from './simulation/planningClient';
 import { scheduleArrivals, type ArrivalTimelineItem } from './simulation/arrivals';
 import { clearanceRequestTime, departureCtotAt, departureTsatAt, departureWaitMinutesAt } from './simulation/departureTiming';
 import { applyWeatherPeriods, composeWeatherDclEvents, weatherStatus, departureStandAt, departureStatusAt, departureAtTime, hasMissedCtotAt, hasReissuedSlotAt, type WeatherPeriod } from './simulation/weather';
@@ -77,8 +77,11 @@ function App() {
   const sampleRequests = useRef(new Map<string, Promise<ImportedWorkbook>>());
   const customWorkbook = useRef<ImportedWorkbook | null>(null);
   const activeLoad = useRef(0);
+  const dayJob = useRef<AbortController | null>(null);
+  useEffect(() => { dayJob.current?.abort(); return () => dayJob.current?.abort(); }, [day, selectedSource]);
 
   function useWorkbook(next: ImportedWorkbook, source: string) {
+    dayJob.current?.abort(); dayJob.current = null;
     const movements = next.enrichedRows.filter((row) => isDepartureFromTsn(row) || isArrivalAtTsn(row));
     const dateCounts = new Map<string, number>();
     for (const row of movements) {
@@ -172,19 +175,22 @@ function App() {
   const weatherHorizon = weatherPeriods.some(period => period.end === null)
     ? baselineFlights.reduce((latest, flight) => { const request = flight.tsat - 20 * 60_000; return request <= timeCursor ? Math.max(latest, request) : latest; }, -Infinity)
     : Infinity;
-  const lastSafeWeatherPlan = useRef<{ source: typeof baselineFlights; plan: { flights: typeof baselineFlights; arrivals: typeof baselineArrivals } } | null>(null);
-  const weatherPlan = useMemo(() => {
-    try { return { ...applyWeatherPeriods(baselineFlights, baselineArrivals, weatherPeriods, runway, weatherHorizon), error: '' }; }
-    catch (error) {
-      const previous = lastSafeWeatherPlan.current;
-      const plan = previous?.source === baselineFlights ? previous.plan : { flights: baselineFlights, arrivals: baselineArrivals };
-      return { ...plan, error: (error as Error).message };
-    }
-  }, [baselineFlights, baselineArrivals, weatherPeriods, runway, weatherHorizon]);
+  const [planningWeather, setPlanningWeather] = useState(false);
+  const [weatherResult, setWeatherResult] = useState<{ source: typeof baselineFlights | null; flights: typeof baselineFlights; arrivals: typeof baselineArrivals; error: string }>({ source: null, flights: [], arrivals: [], error: '' });
   useEffect(() => {
-    if (weatherPlan.error) setPlaying(false);
-    else lastSafeWeatherPlan.current = { source: baselineFlights, plan: weatherPlan };
-  }, [weatherPlan, baselineFlights]);
+    if (!weatherPeriods.length || (!baselineFlights.length && !baselineArrivals.length)) {
+      setWeatherResult({ source: baselineFlights, flights: baselineFlights, arrivals: baselineArrivals, error: '' });
+      setPlanningWeather(false); return;
+    }
+    const controller = new AbortController();
+    setPlanningWeather(true);
+    planAsync({ type: 'weather', flights: baselineFlights, arrivals: baselineArrivals, periods: weatherPeriods, runway, horizon: weatherHorizon }, controller.signal)
+      .then(plan => { if (!controller.signal.aborted) setWeatherResult({ source: baselineFlights, ...plan, error: '' }); })
+      .catch(error => { if (!controller.signal.aborted) { setWeatherResult(previous => ({ ...previous, error: (error as Error).message })); setPlaying(false); } })
+      .finally(() => { if (!controller.signal.aborted) setPlanningWeather(false); });
+    return () => controller.abort();
+  }, [baselineFlights, baselineArrivals, weatherPeriods, runway, weatherHorizon]);
+  const weatherPlan = weatherResult.source === baselineFlights ? weatherResult : { flights: baselineFlights, arrivals: baselineArrivals, error: '' };
   const { flights, arrivals } = weatherPlan;
   const holdingPoint = getHoldingPoint(runway);
   const runwaySegment = getRunwaySegment(runway);
@@ -219,46 +225,26 @@ function App() {
     ]);
   }
   function resetReplay() {
+    dayJob.current?.abort(); dayJob.current = null; setBusy(false);
     setFlights([]); setArrivals([]); setProposed(null); setEvents([]); setPlaying(false);
     setMinute(0); setWeatherPeriods([]); setWeatherRequested(false); setSelectedFlight(null);
   }
   function runDay() {
     if (!imported) { setMessage('Hãy chọn workbook trước khi chạy mô phỏng.'); return; }
     setBusy(true);
-    window.setTimeout(() => {
+    dayJob.current?.abort();
+    const controller = new AbortController(); dayJob.current = controller;
+    window.setTimeout(async () => {
       try {
-        const schedule = toScheduledFlights(dailySchedule);
-        const raw = runSimulation(schedule, true);
-        const physical = planSurfaceTraffic(raw.flights, scheduleArrivals(dailyArrivals, raw.flights), runway);
-        const improved = { ...raw, flights: physical.flights, totalWaitMinutes: physical.flights.reduce((sum, flight) => sum + flight.waitMinutes, 0),
-          missedCtot: physical.flights.filter((flight) => flight.missedCtot).length,
-          reissuedCtot: physical.flights.filter((flight) => flight.reissuedCtot !== null || flight.reissuedTsat !== null).length,
-          durationMinutes: physical.flights.length ? (Math.max(...physical.flights.map((flight) => flight.wheelsOff)) - Math.min(...physical.flights.map((flight) => flight.readyAt))) / 60_000 : 0 };
+        const physical = await planAsync({ type: 'day', rows: dailySchedule, arrivals: dailyArrivals, runway }, controller.signal);
+        if (controller.signal.aborted) return;
+        const finite = physical.flights.filter(flight => Number.isFinite(flight.wheelsOff));
+        const improved: SimulationResult = { flights: physical.flights, totalWaitMinutes: physical.flights.reduce((sum, flight) => sum + flight.waitMinutes, 0),
+          missedCtot: physical.flights.filter(flight => flight.missedCtot).length, reissuedCtot: 0,
+          completed: finite.length, durationMinutes: finite.length ? (Math.max(...finite.map(flight => flight.wheelsOff)) - Math.min(...finite.map(flight => flight.readyAt))) / 60_000 : 0 };
         const inbound = physical.arrivals;
         setProposed(improved); setFlights(improved.flights); setArrivals(inbound);
-        const departuresByRow = new Map(improved.flights.map((flight) => [flight.row, flight]));
-        const arrivalsByRow = new Map(inbound.map((flight) => [flight.row, flight]));
-        const updatedRows = imported.enrichedRows.map((row) => {
-          const departure = departuresByRow.get(row);
-          if (departure) return {
-            ...row, TSAT: new Date(departure.tsat).toISOString(),
-            ActualTakeoff: new Date(departure.wheelsOff).toISOString(),
-            RunwayEntry: new Date(departure.runwayEntryStart).toISOString(),
-            TakeoffRollStart: new Date(departure.takeoffRollStart).toISOString(),
-            ReissuedCTOT: departure.reissuedCtot ? new Date(departure.reissuedCtot).toISOString() : '',
-            ReissuedTSAT: departure.reissuedTsat ? new Date(departure.reissuedTsat).toISOString() : '',
-            ReturnStand: departure.returnStand ?? '', QueueOrder: departure.order,
-            SimulationStatus: departure.status,
-            RunwayConfig: runway, TaxiRoute: getTaxiRouteDescription(runway, String(row.Stand ?? '—')),
-          };
-          const arrival = arrivalsByRow.get(row);
-          return arrival ? {
-            ...row, ActualLanding: new Date(arrival.touchdown).toISOString(),
-            CrossingStart: new Date(arrival.crossingStart).toISOString(),
-            StandArrival: new Date(arrival.standArrival).toISOString(),
-          } : row;
-        });
-        setImported({ ...imported, enrichedRows: updatedRows });
+
         const firstDepartureMovement = Math.min(...improved.flights.map((flight) => clearanceRequestTime(flight.tsat, dayStart)), Infinity);
         const firstArrivalMovement = Math.min(...inbound.map((flight) => flight.approachStart), Infinity);
         const firstMovement = Math.min(firstDepartureMovement, firstArrivalMovement);
@@ -289,17 +275,18 @@ function App() {
         setEvents(allEvents); setSelectedFlight(improved.flights[0]?.callsign ?? inbound[0]?.callsign ?? null);
         setMessage(`Mô phỏng hoàn tất · ${improved.completed} chuyến đi · ${inbound.length} chuyến đến.`);
       } catch (error) {
+        if (controller.signal.aborted) return;
         setMessage(`Lỗi mô phỏng: ${(error as Error).message}`);
         setPlaying(false);
       } finally {
-        setBusy(false);
+        if (dayJob.current === controller && !controller.signal.aborted) setBusy(false);
       }
     }, 20);
   }
 
 
   useEffect(() => {
-    if (!playing || !proposed) return;
+    if (!playing || !proposed || planningWeather || weatherPlan.error) return;
     let frameId = 0;
     let previous = performance.now();
     let elapsed = 0;
@@ -326,7 +313,7 @@ function App() {
       cancelAnimationFrame(frameId);
       document.removeEventListener('visibilitychange', resetClock);
     };
-  }, [playing, proposed, speed, playbackEndMinute, openWeather]);
+  }, [playing, proposed, speed, playbackEndMinute, openWeather, planningWeather, weatherPlan.error]);
 
   const visibleFlights = flights.filter((flight) => {
     const matchesSearch = `${flight.callsign} ${flight.aircraftType} ${flight.stand}`.toLowerCase().includes(search.toLowerCase());
@@ -354,6 +341,8 @@ function App() {
 
   return (
     <main className={`app-shell ${focusMode ? 'focus-mode' : ''}`}>
+      {message.startsWith('Lỗi mô phỏng:') && <div role="alert">{message}</div>}
+      {(busy || planningWeather) && <div role="status" className="planning-status" style={{ position: 'fixed', top: 80, right: 24, zIndex: 1000, padding: '8px 14px', borderRadius: 8, background: '#14283d', color: 'white', pointerEvents: 'none' }}>Đang cập nhật lịch…</div>}
       {weatherPlan.error && <div role="alert">Tạm dừng phát lại: {weatherPlan.error}</div>}
       <header className="topbar">
         <a className="brand" href="#top" aria-label="Flight operations home">
@@ -397,7 +386,7 @@ function App() {
 
       <section className="playback-bar" aria-label="Điều khiển phát lại">
         <div className="playback-label"><span className={`playback-dot ${playing ? 'active' : ''}`} /><span>{playing ? 'ĐANG PHÁT' : 'PHÁT LẠI 24 GIỜ'}</span></div>
-        <button className="play-button" disabled={Boolean(weatherPlan.error)} aria-label={playing ? 'Tạm dừng mô phỏng' : 'Phát mô phỏng'} onClick={() => { if (!proposed) runDay(); else setPlaying(!playing); }}><span>{playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</span>{playing ? 'Tạm dừng' : 'Phát'}</button>
+        <button className="play-button" disabled={busy || Boolean(weatherPlan.error)} aria-label={playing ? 'Tạm dừng mô phỏng' : 'Phát mô phỏng'} onClick={() => { if (!proposed) runDay(); else setPlaying(!playing); }}><span>{playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</span>{playing ? 'Tạm dừng' : 'Phát'}</button>
         <button className="play-button" aria-label="Lùi 30 giây" title="Lùi 30 giây" disabled={!proposed} onClick={() => setMinute(current => Math.max(playbackStartMinute, current - 30 / 60))}>↶ 30s</button>
         <div className="timeline-control"><span className="timeline-start">{fmtShort(dayStart + playbackStartMinute * 60_000)}</span><input aria-label="Tua thời gian mô phỏng" type="range" min={playbackStartMinute} max={playbackEndMinute} step={1} value={minute} style={{ '--progress': String((minute - playbackStartMinute) / (playbackEndMinute - playbackStartMinute) * 100) + '%' } as React.CSSProperties} onChange={(event) => setMinute(Number(event.target.value))} /><span className="timeline-end">{playbackEndLabel}</span></div>
         <div className="clock-display"><Clock3 size={15} /><strong>{Math.floor(clockMinute / 60).toString().padStart(2, '0')}:{Math.floor(clockMinute % 60).toString().padStart(2, '0')}</strong><span>LT{minute >= 1440 ? ' +1' : minute < 0 ? ' −1' : ''}</span></div>
@@ -420,7 +409,7 @@ function App() {
                 </g>
                 <g className="runway-end"><circle cx={runwaySegment.threshold.x} cy={runwaySegment.threshold.y} r="6" />
                   <text x={runwaySegment.threshold.x - 95} y={runwaySegment.threshold.y + 25}>CẤT CÁNH · 25L</text></g>
-                {flights.filter((flight) => timeCursor >= (departureRcdTimes.get(flight.id) ?? Infinity) && timeCursor < flight.wheelsOff + TAKEOFF_VISIBLE_AFTER_MS).map((flight) => {
+                {flights.filter((flight) => !flight.weather?.offApron && timeCursor >= (departureRcdTimes.get(flight.id) ?? Infinity) && timeCursor < flight.wheelsOff + TAKEOFF_VISIBLE_AFTER_MS).map((flight) => {
                   const queueIndex = holdingQueue.findIndex((queued) => queued.id === flight.id);
                   const position = departurePosition(flight, timeCursor, queueIndex, runway);
                   const chosen = selectedFlight === flight.callsign;
@@ -501,12 +490,12 @@ function App() {
               const missed = hasMissedCtotAt(flight, timeCursor);
               const revisedSlot = flight.reissuedTsat ?? flight.reissuedCtot;
               const awaitingWeatherTimes = badWeather && missed && timeCursor < flight.wheelsOff;
-              const tsat = weather?.pending && flight.weather?.heldAtStand ? null : departureTsatAt(flight, timeCursor);
+              const tsat = weather?.pending && flight.weather?.heldAtStand && !flight.weather.normalSuspension ? null : departureTsatAt(flight, timeCursor);
               const status = badWeather && timeCursor < flight.takeoffRollStart ? missed ? 'Không tuân thủ CTOT' : 'Chờ thời tiết tốt' : departureStatusAt(flight, timeCursor, runway);
               return <tr key={flight.id} className={selectedFlight === flight.callsign ? 'selected-row' : ''} onClick={() => setSelectedFlight(flight.callsign)}>
                 <td className="order-cell">{flight.order.toString().padStart(2, '0')}</td>
                 <td><div className="flight-call">{flight.callsign}</div><div className="flight-type">{flight.aircraftType}</div></td>
-                <td><span className="stand-pill">{departureStandAt(flight, timeCursor)}</span></td>
+                <td><span className="stand-pill">{flight.weather?.offApron ? 'Chờ vị trí đỗ' : departureStandAt(flight, timeCursor)}</span></td>
                 <td className="time-cell" title={`CTOT gốc ${fmtShort(flight.ctot)}`}>{awaitingWeatherTimes ? 'Đang chờ CTOT' : fmtShort(departureCtotAt(flight, timeCursor))}</td>
                 <td className="time-cell" title={`CTOT gốc ${fmtShort(flight.ctot)}${revisedSlot !== null && Number.isFinite(revisedSlot) ? ` · ${flight.reissuedTsat !== null ? 'TSAT' : 'CTOT'} mới ${fmtShort(revisedSlot)}` : ''}`}>{awaitingWeatherTimes ? 'Đang chờ TSAT' : tsat === null || !Number.isFinite(tsat) ? 'Chờ cấp lại' : fmtShort(tsat)}</td>
                 <td><span className={`status-pill ${missed ? 'status-late' : weather?.pending || (!weather && flight.waitMinutes > .1) ? 'status-wait' : 'status-ok'}`}><i />{status}</span></td>

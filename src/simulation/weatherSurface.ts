@@ -2,11 +2,21 @@ import { Reservations, type SurfaceLeg, type SurfacePlan } from './surfaceTraffi
 import type { AircraftPosition } from '../map/playback';
 
 /** Sample the same trajectory that is displayed, compressing stationary intervals. */
-export function weatherTrajectory(start: number, end: number, position: (time: number) => AircraftPosition): SurfaceLeg[] {
+export function weatherTrajectory(start: number, end: number, position: (time: number) => AircraftPosition, checkpoints: number[] = []): SurfaceLeg[] {
+  const boundaries = [...new Set([...checkpoints, end])].filter(time => Number.isFinite(time) && time > start).sort((a, b) => a - b);
   const legs: SurfaceLeg[] = [];
   let previous = position(start);
   for (let time = start; time < end;) {
-    const nextTime = Math.min(end, time + 2000), next = position(nextTime);
+    let nextTime = Math.min(end, time + 2000), next = position(nextTime);
+    if (Math.hypot(next.point.x - previous.point.x, next.point.y - previous.point.y) < .001) {
+      const boundary = boundaries.find(value => value > nextTime);
+      if (boundary !== undefined) {
+        const before = position(boundary - .01);
+        if (before.phase === previous.phase && Math.hypot(before.point.x - previous.point.x, before.point.y - previous.point.y) < .001) {
+          nextTime = boundary; next = position(boundary);
+        }
+      }
+    }
     const stationary = Math.hypot(next.point.x - previous.point.x, next.point.y - previous.point.y) < .001;
     const last = legs.at(-1);
     if (stationary && last?.points.length === 1 && Math.hypot(last.points[0].x - previous.point.x, last.points[0].y - previous.point.y) < .001) last.end = nextTime;

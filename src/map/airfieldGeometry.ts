@@ -15,7 +15,11 @@ export function getRunwaySegment(_runway: string) {
   return { entryPath: runwayEntryPath(), threshold: RUNWAY_ENTRY, rollEnd: RUNWAY_END };
 }
 export function getTaxiRoutePoints(stand: string, _runway: string): MapPoint[] { return taxiRoutes(stand)[0].points; }
+const arrivalRouteCache = new Map<string, { approach: MapPoint[]; landing: MapPoint[]; toHold: MapPoint[]; fromHold: MapPoint[] }>();
 export function getArrivalRoutePoints(stand: string, branch: 'P4' | 'P5' = 'P4') {
+  const key = `${stand}:${branch}`;
+  const cached = arrivalRouteCache.get(key);
+  if (cached) return cached;
   const { exit, path } = arrivalExitPaths(branch);
   const taxiPath = taxiRoutes(stand, 'P5')[0].points;
   const join = taxiPath.findIndex(point => point.x === 580 && point.y === 559);
@@ -26,12 +30,14 @@ export function getArrivalRoutePoints(stand: string, branch: 'P4' | 'P5' = 'P4')
       ...curve({ x: 520, y: 546 }, { x: 540, y: 558 }, { x: 553, y: 559 }, { x: 580, y: 559 }).slice(1),
       ...taxiPath.slice(join + 1)]
     : [...curve(crossingExit, { x: 440, y: 487 }, { x: 451, y: 495 }, { x: 475, y: 495 }), ...taxiPath.slice(1)];
-  return {
+  const result = {
     approach: [{ x: 1860, y: 227 }, { x: 1610, y: 227 }],
     landing: [{ x: 1610, y: 227 }, exit],
     toHold: path,
     fromHold: [P5_HOLD, { x: 440, y: 411 }, crossingExit, ...toStand.slice(1)],
   };
+  arrivalRouteCache.set(key, result);
+  return result;
 }
 export function getNearestReturnStand(originalStand: string, unavailable: Set<string>, category: WakeCategory, from: MapPoint = HOLD_S1): string {
   const international = Number(originalStand) >= 1 && Number(originalStand) <= 16;

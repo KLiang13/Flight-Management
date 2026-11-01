@@ -4,6 +4,8 @@ export type DclContext = { origin?: string; destination?: string; stand?: string
 /** Lay out each simulated telegram in the same field groups as the DCL examples. */
 export function formatDclMessage(message: string): string[] {
   const text = message.trim().replace(/\s+/g, ' ');
+  const awaiting = text.match(/^CLD (\d{4}) (\d{6}) ([A-Z]{4}) (PDC \d+) (\S+) AWAIT NEW TSAT$/);
+  if (awaiting) return [`CLD ${awaiting[1]} ${awaiting[2]} ${awaiting[3]} ${awaiting[4]}`, `${awaiting[5]} AWAIT NEW TSAT`];
   let match = text.match(/^CDA (\d{4}) (\d{6}) ([A-Z]{4}) (\S+) CDA RECEIVED CLEARANCE CONFIRMED$/);
   if (match) return [`CDA ${match[1]} ${match[2]} ${match[3]}`, `${match[4]} CDA RECEIVED`, 'CLEARANCE CONFIRMED'];
 

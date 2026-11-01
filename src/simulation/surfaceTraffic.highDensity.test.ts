@@ -21,18 +21,19 @@ it('plans a 650-movement day without collisions, repeated P5 waits, or overlappi
   expect(performance.now() - started).toBeLessThan(30_000);
   expect(plan.flights).toHaveLength(329);
   expect(plan.arrivals).toHaveLength(321);
-  for (let index = 1; index < plan.arrivals.length; index += 1) {
-    expect(plan.arrivals[index].touchdown).toBeGreaterThanOrEqual(plan.arrivals[index - 1].landingEnd + 60_000);
+  const landed = plan.arrivals.filter(arrival => arrival.divertedAt === undefined);
+  for (let index = 1; index < landed.length; index += 1) {
+    expect(landed[index].touchdown).toBeGreaterThanOrEqual(landed[index - 1].landingEnd + 60_000);
   }
-  for (const arrival of plan.arrivals) for (const departure of plan.flights) {
+  for (const arrival of plan.arrivals.filter(flight => flight.divertedAt === undefined)) for (const departure of plan.flights.filter(flight => Number.isFinite(flight.wheelsOff))) {
     expect(arrival.crossingEnd <= departure.runwayEntryStart || arrival.crossingStart >= departure.wheelsOff + RUNWAY_CLEARANCE_MS,
       JSON.stringify({ arrival: arrival.id, crossing: [arrival.crossingStart, arrival.crossingEnd], departure: departure.id,
         occupied: [departure.runwayEntryStart, departure.wheelsOff + RUNWAY_CLEARANCE_MS] })).toBe(true);
     expect(departure.runwayEntryStart < arrival.p5HoldAt || departure.runwayEntryStart >= arrival.crossingEnd).toBe(true);
     expect(departure.takeoffRollStart < arrival.approachStart || departure.takeoffRollStart >= arrivalThresholdClearAt(arrival)).toBe(true);
   }
-  const all = [...plan.flights, ...plan.arrivals].sort((a, b) => a.surfacePlan!.visibleFrom - b.surfacePlan!.visibleFrom);
-  const end = Math.max(...all.map((flight) => flight.surfacePlan!.visibleUntil));
+  const all = [...plan.flights.filter(flight => !flight.weather?.offApron), ...plan.arrivals.filter(flight => flight.divertedAt === undefined)].sort((a, b) => a.surfacePlan!.visibleFrom - b.surfacePlan!.visibleFrom);
+  const end = all[0].surfacePlan!.visibleFrom + 24 * 60 * 60_000;
   let next = 0, active: typeof all = [];
   // Verify the actual renderer positions rather than the scheduler's internal samples.
   for (let time = all[0].surfacePlan!.visibleFrom; time < end; time += 1000) {

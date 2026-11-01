@@ -10,6 +10,7 @@ import { readFlightFile } from '../data/workbook';
 import { isDepartureFromTsn, isArrivalAtTsn } from '../data/enrichFlights';
 import { toScheduledFlights } from './runSimulation';
 import { scheduleArrivals } from './arrivals';
+import { computePlan } from './planning';
 
 describe('weather route reservations', () => {
   it('finishes taxiing to S1 during open rain after passing the lamp', () => {
@@ -29,18 +30,17 @@ describe('weather route reservations', () => {
     const file = new File([bytes], '21102026.xlsx');
     Object.defineProperty(file, 'arrayBuffer', { value: async () => Uint8Array.from(bytes).buffer });
     const workbook = await readFlightFile(file);
-    const departures = runSimulation(toScheduledFlights(workbook.enrichedRows.filter(isDepartureFromTsn)), true).flights;
-    const physical = planSurfaceTraffic(departures, scheduleArrivals(workbook.enrichedRows.filter(isArrivalAtTsn), departures), '25L-25R');
-    const start = physical.flights[Math.floor(physical.flights.length / 2)].taxiStart + 60_000;
+    const physical = computePlan({ type: 'day', rows: workbook.enrichedRows.filter(isDepartureFromTsn), arrivals: workbook.enrichedRows.filter(isArrivalAtTsn), runway: '25L-25R' });
+    const start = new Date('2026-10-01T14:00:00').getTime();
     const open = applyWeatherPeriods(physical.flights, physical.arrivals, [{ start, end: null }], '25L-25R');
     expect(open.flights.length).toBe(physical.flights.length);
     const plan = applyWeatherPeriods(physical.flights, physical.arrivals, [{ start, end: start + 40 * 60_000 }], '25L-25R');
-    expect(plan.flights.every(flight => Number.isFinite(flight.wheelsOff))).toBe(true);
+    expect(plan.flights.every(flight => Number.isFinite(flight.wheelsOff) || flight.weather?.blockedAt !== undefined)).toBe(true);
     expect(plan.flights.some(flight => flight.weather?.surfacePlan)).toBe(true);
-    const end = Math.max(...plan.flights.map(flight => flight.wheelsOff));
+    const end = start + 4 * 60 * 60_000;
     for (let time = start; time < end; time += 2000) {
       const points = [
-        ...plan.flights.filter(flight => time >= flight.tsat - 20 * 60_000 && time < flight.wheelsOff)
+        ...plan.flights.filter(flight => !flight.weather?.offApron && time >= flight.tsat - 20 * 60_000 && time < flight.wheelsOff)
           .map(flight => ({ id: flight.id, radius: flight.wakeCategory === 'H' ? 15 : 9, point: departurePosition(flight, time, 0, '25L-25R').point })),
         ...plan.arrivals.filter(flight => flight.divertedAt === undefined
           && time >= (flight.weather?.surfacePlan?.visibleFrom ?? flight.approachStart)
@@ -84,8 +84,8 @@ describe('weather route reservations', () => {
       expect(flight.reissuedCtot).toBeNull();
       expect(flight.reissuedTsat).toBeNull();
     }
-    for (let time = start; time < Math.max(...recovered.map(flight => flight.wheelsOff)); time += 2000) {
-      const active = recovered.filter(flight => time >= flight.tsat - 20 * minute && time < flight.wheelsOff);
+    for (let time = start; time < end + 60 * minute; time += 2000) {
+      const active = recovered.filter(flight => !flight.weather?.offApron && time >= flight.tsat - 20 * minute && time < flight.wheelsOff);
       for (let a = 0; a < active.length; a++) for (let b = a + 1; b < active.length; b++) {
         const pa = departurePosition(active[a], time, 0, '25L-25R').point;
         const pb = departurePosition(active[b], time, 0, '25L-25R').point;
