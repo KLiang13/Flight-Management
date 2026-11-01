@@ -157,7 +157,7 @@ Trong kịch bản của ứng dụng, mọi RCD được chấp nhận; không 
 
 RCD phát đúng **TSAT ban đầu −20 phút**, kể cả khi thời tiết xấu đã xuất hiện; dòng thời gian hỗ trợ RCD trước 00:00. Thông báo **ADVERSE WEATHER** và **WEATHER IMPROVED** nằm trong bảng thời tiết độc lập. Nếu chưa cấp CLD trước mưa, sau mưa ATC vẫn cấp CLD với TSAT đang áp dụng: giữ giờ cũ nếu không đổi, hiển thị giờ mới nếu đã điều chỉnh. CDA xác nhận CLD đã cấp vẫn được giữ khi mưa xuất hiện giữa hai bản tin. Khi đã cấp CLD và TSAT không đổi, không phát lại CLD chỉ để thông báo CTOT.
 
-Thanh phát lại có nút **Lùi 10 giây**, thanh tua và các tốc độ phát; bản tin và vị trí hiển thị theo thời điểm đang xem.
+Thanh phát lại có nút **Lùi 30 giây**, thanh tua và các tốc độ phát; bản tin và vị trí hiển thị theo thời điểm đang xem.
 
 ## Dữ liệu đầu vào
 
@@ -234,7 +234,7 @@ npm run dev -- --port 4175
 3. Dùng **Phát/Tạm dừng**, thanh thời gian và tốc độ để quan sát các lượt đi/đến.
 4. Chọn tàu trên bản đồ hoặc trong hàng chờ để theo dõi; dùng tìm kiếm và bộ lọc khi cần.
 5. Bật/tắt **Thời tiết xấu** để xem xử lý hết hạn và khôi phục lịch.
-6. Dùng **Lùi 10 giây** hoặc **Xem lịch sử** để kiểm tra các điện văn trước đó.
+6. Dùng **Lùi 30 giây** hoặc **Xem lịch sử** để kiểm tra các điện văn trước đó.
 
 ### Dữ liệu kết quả
 
