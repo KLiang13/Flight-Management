@@ -150,7 +150,7 @@ TSAT 1305
 
 Kịch bản còn có nhánh từ chối/timeout, yêu cầu gửi lại, thông báo `CTOT EXPIRED`, `TSAT REVISED`, `CTOT REVISED` và khôi phục sau thời tiết xấu.
 
-RCD phát đúng **TSAT ban đầu −20 phút**, kể cả khi thời tiết xấu đã xuất hiện; dòng thời gian hỗ trợ RCD trước 00:00 của ngày khai thác. Khi ATC trả FSM chờ thời tiết, kịch bản tạm ngưng nhánh timeout/gửi lại/chuyển thoại cho giao dịch đó. Sau khi khôi phục, ATC gửi CLD với TSAT cấp lại (hoặc CTOT khi tàu đã rời stand), tiếp theo là CDA. Đây là quy tắc chờ thời tiết của mô hình, không mô phỏng lỗi đường truyền datalink.
+RCD phát đúng **TSAT ban đầu −20 phút**, kể cả khi thời tiết xấu đã xuất hiện; dòng thời gian hỗ trợ RCD trước 00:00 của ngày khai thác. Thông báo ADVERSE WEATHER / STANDBY và WEATHER IMPROVED nằm trong bảng thời tiết độc lập, không đưa vào luồng DCL và không phụ thuộc RCD của từng tàu. Trong thời gian ngừng cấp phép, kịch bản tạm ngưng nhánh timeout/gửi lại/chuyển thoại cho giao dịch bị ảnh hưởng. Sau khi khôi phục, ATC gửi CLD với TSAT cấp lại (hoặc CTOT khi tàu đã rời stand), tiếp theo là CDA. Đây là quy tắc chờ thời tiết của mô hình, không mô phỏng lỗi đường truyền datalink.
 
 ## Dữ liệu đầu vào
 

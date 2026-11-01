@@ -80,3 +80,15 @@ describe('Flight operations dashboard', () => {
     expect(screen.getByText('TỔNG THỜI GIAN CHỜ').closest('article')?.querySelector('.kpi-value')).toHaveTextContent(/^0 phút$/);
   });
 });
+
+describe('independent weather bulletin', () => {
+  it('broadcasts adverse weather without inserting a DCL telegram', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Thời tiết xấu' })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole('switch', { name: 'Thời tiết xấu' }));
+    expect(screen.getByRole('region', { name: 'Bản tin thời tiết' })).toHaveTextContent('ADVERSE WEATHER · STANDBY');
+    expect(screen.getByRole('table', { name: 'Bảng điện văn DCL' })).not.toHaveTextContent('ADVERSE WEATHER');
+    fireEvent.click(screen.getByRole('switch', { name: 'Thời tiết xấu' }));
+    expect(screen.getByRole('region', { name: 'Bản tin thời tiết' })).toHaveTextContent('Thời tiết tốt');
+  });
+});

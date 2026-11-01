@@ -43,7 +43,7 @@ describe('weather suspension rules', () => {
     expect(requestAt).toBe(777 * minute);
     const requests = createDclEvents('D', requestAt, 13).map(event => ({ ...event, flightId: 'D' }));
     const messages = weatherDclEvents([recovered], periods, requests);
-    expect(messages.find(event => event.message.startsWith('FSM ') && event.message.includes('STANDBY'))?.time).toBe(requestAt + 15_000);
+    expect(messages.some(event => event.message.includes('ADVERSE WEATHER') || event.message.includes('STANDBY'))).toBe(false);
     expect(messages.some(event => event.status === 'TIMEOUT' || event.message.includes('VOICE') || event.message.includes('ALL '))).toBe(false);
     const clearance = messages.find(event => event.message.startsWith('CLD '))!;
     expect(clearance.time).toBe(825 * minute);
@@ -67,7 +67,7 @@ describe('weather suspension rules', () => {
     const requests = createDclEvents('D', 80 * minute, 13).map(event => ({ ...event, flightId: 'D' }));
     const combined = composeWeatherDclEvents(requests, [recovered], periods);
     const suspended = combined.filter(event => event.time >= 79 * minute && event.time < 85 * minute);
-    expect(suspended.map(event => event.message.split(' ')[0])).toEqual(['RCD', 'FSM']);
+    expect(suspended.map(event => event.message.split(' ')[0])).toEqual(['RCD']);
     expect(suspended.some(event => event.status === 'TIMEOUT' || event.message.includes('VOICE'))).toBe(false);
     expect(combined.filter(event => event.message.startsWith('RCD '))).toHaveLength(1);
     expect(combined.find(event => event.message.startsWith('CLD '))?.time).toBe(85 * minute);

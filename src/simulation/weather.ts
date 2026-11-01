@@ -342,13 +342,7 @@ export function weatherDclEvents(flights: TimelineItem[], periods: WeatherPeriod
       const requestDuringRain = (requestedAt >= period.start && requestedAt < (period.end ?? Infinity))
         || requests.some(event => event.flightId === flight.id && event.time >= period.start && event.time < (period.end ?? Infinity));
       if (!state && !requestDuringRain) continue;
-      const standbyAt = Math.max(period.start, requestedAt + 15_000);
-      // The request keeps its original time even when startup is suspended.
-      if (standbyAt < (period.end ?? Infinity)) events.push({
-        id: `${flight.id}-weather-${period.start}-standby`, flightId: flight.id, time: standbyAt,
-        callsign: flight.callsign, direction: 'Hệ thống → Tổ lái',
-        message: `FSM ${messageStamp(standbyAt)} VVTS ${flight.callsign} RCD RECEIVED ADVERSE WEATHER STANDBY`, status: 'OK',
-      });
+      // Weather broadcasts belong to the independent weather bulletin, not DCL.
       if (state?.missedAt !== null && state?.missedAt !== undefined) events.push({
         id: `${flight.id}-weather-${period.start}-expired`, flightId: flight.id, time: state.missedAt,
         callsign: flight.callsign, direction: 'Hệ thống → Tổ lái',
@@ -387,5 +381,5 @@ export function composeWeatherDclEvents(events: DclEvent[], flights: TimelineIte
   });
   return [...events.filter(event => (event.message.startsWith('RCD ') && !event.message.includes('(RETRY)'))
     || !cutoffs.some(cutoff => event.flightId === cutoff.id && event.time >= cutoff.time)),
-    ...weatherDclEvents(flights, periods, events)].sort((a, b) => a.time - b.time || a.id.localeCompare(b.id));
+    ...weatherDclEvents(flights, periods, events)].filter(event => !/ADVERSE WEATHER|WEATHER IMPROVED|DEPARTURE CLEARANCES RESUMED/.test(event.message)).sort((a, b) => a.time - b.time || a.id.localeCompare(b.id));
 }

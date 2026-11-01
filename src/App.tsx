@@ -445,7 +445,7 @@ function App() {
         <div className="communications-column">
           <section className={`weather-bulletin ${badWeather ? 'adverse' : ''}`} aria-label="Bản tin thời tiết">
             <div><strong>BẢN TIN THỜI TIẾT</strong></div>
-            <p role="status">{badWeather ? 'Thời tiết xấu' : 'Thời tiết tốt'}</p>
+            <p role="status">{badWeather ? 'ADVERSE WEATHER · STANDBY' : weatherPeriods.some(period => period.end !== null && period.end <= timeCursor) ? 'WEATHER IMPROVED · OPERATIONS RESUMED' : 'Thời tiết tốt'}</p>
             <time>{fmtTime(weatherPeriods.flatMap(period => [period.start, ...(period.end === null ? [] : [period.end])]).filter(at => at <= timeCursor).at(-1) ?? dayStart)} LT</time>
           </section>
         <section className="panel dcl-panel" aria-label="Bản tin DCL"><button className="expand-panel dcl-expand" aria-label="Phóng rộng bản tin DCL" title="Phóng rộng DCL · Esc để thoát" onClick={event => { const panel = event.currentTarget.closest('.dcl-panel'); if (document.fullscreenElement) void document.exitFullscreen(); else if (panel) void panel.requestFullscreen(); }}><Maximize2 size={16} /></button>
