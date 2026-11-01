@@ -6,7 +6,7 @@ import { taxiDuration, landingRollDuration, RUNWAY_ENTRY_MS, TAKEOFF_ROLL_MS, RU
 import type { TimelineItem } from './runSimulation';
 import type { ArrivalTimelineItem } from './arrivals';
 import { ctotDelayMinutes } from './ctot';
-import { clearanceRequestTime, tsatWaitMinutes } from './departureTiming';
+import { clearanceRequestTime, stationaryWaitMinutesAt, tsatWaitMinutes } from './departureTiming';
 import { releaseTakeoffRoll, arrivalDelayForBookedRolls, reserveCrossingsBeforeDeparture } from './runwayCoordination';
 
 export type SurfaceLeg = { start: number; end: number; points: MapPoint[]; phase: string };
@@ -189,6 +189,7 @@ function planDepartures(departures: TimelineItem[], inbound: ArrivalTimelineItem
             missedCtot: revised, status: revised ? 'Không tuân thủ CTOT' : source.status,
             waitMinutes: tsatWaitMinutes(wheelsOff, revised && returnedToStand ? secondTaxiStart ?? taxiStart : taxiStart),
             surfacePlan: { visibleFrom: legs[0].start, visibleUntil: wheelsOff + 8000, legs, route: route.label } };
+          chosen.waitMinutes = stationaryWaitMinutesAt(chosen, wheelsOff);
           for (const id of crossingPriority.served) servedCrossings.add(id);
           runwayAvailable = wheelsOff + RUNWAY_CLEARANCE_MS;
           break;

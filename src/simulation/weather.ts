@@ -43,8 +43,14 @@ function returnPath(from: MapPoint, stand: string, runway: string): MapPoint[] {
 
 type Reservation = { stand: string; from: number; until: number; id: string };
 
-function applyPeriod(departures: TimelineItem[], inbound: ArrivalTimelineItem[], period: WeatherPeriod, runway: string) {
+function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[], period: WeatherPeriod, runway: string) {
   const release = period.end ?? Infinity;
+  const diverted = incoming.filter(arrival => arrival.divertedAt !== undefined
+    || (arrival.touchdown >= period.start && arrival.approachStart < release))
+    .map(arrival => arrival.divertedAt !== undefined ? arrival
+      : { ...arrival, divertedAt: Math.max(period.start, arrival.approachStart) });
+  const divertedIds = new Set(diverted.map(arrival => arrival.id));
+  const inbound = incoming.filter(arrival => !divertedIds.has(arrival.id));
   const reservations: Reservation[] = departures.map((flight) => ({
     stand: flight.stand, from: flight.readyAt - 45 * MINUTE,
     until: flight.taxiStart >= period.start ? Math.max(flight.taxiStart, release) : flight.taxiStart, id: flight.id,
@@ -276,7 +282,7 @@ function applyPeriod(departures: TimelineItem[], inbound: ArrivalTimelineItem[],
       // Preserve pre-weather playback, then animate the revised crossing times.
       ...(changed ? { weather: { ...period, previous }, surfacePlan: undefined } : {}) };
   });
-  return { flights, arrivals };
+  return { flights, arrivals: [...arrivals, ...diverted].sort((a, b) => a.touchdown - b.touchdown || a.id.localeCompare(b.id)) };
 }
 
 export function applyWeatherPeriods(flights: TimelineItem[], arrivals: ArrivalTimelineItem[], periods: WeatherPeriod[], runway: string) {

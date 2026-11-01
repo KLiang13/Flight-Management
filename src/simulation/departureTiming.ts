@@ -1,4 +1,5 @@
 import type { TimelineItem } from './runSimulation';
+import { RUNWAY_ENTRY_MS } from './movementPhysics';
 
 export function clearanceRequestTime(tsat: number, dayStart: number): number {
   return tsat - 20 * 60_000;
@@ -19,9 +20,34 @@ export function departureTsatAt(flight: TimelineItem, time: number): number {
   return flight.reissuedTsat !== null && time >= (flight.returnEnd ?? -Infinity) ? flight.reissuedTsat : flight.tsat;
 }
 
+/** Only stationary intervals after the latest issued TSAT count as normal waiting. */
+export function stationaryWaitMinutesAt(flight: TimelineItem, time: number): number {
+  const start = departureTsatAt(flight, time), end = Math.min(time, flight.wheelsOff);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  const moving: [number, number][] = flight.surfacePlan
+    ? flight.surfacePlan.legs.filter(leg => leg.points.some(point =>
+        Math.hypot(point.x - leg.points[0].x, point.y - leg.points[0].y) > .01))
+      .map(leg => [leg.start, leg.end])
+    : [
+        [flight.taxiStart, flight.taxiStart + flight.taxiMinutes * 60_000],
+        ...(flight.returnStart !== null && flight.returnEnd !== null ? [[flight.returnStart, flight.returnEnd] as [number, number]] : []),
+        ...(flight.secondTaxiStart !== null ? [[flight.secondTaxiStart, flight.secondTaxiStart + flight.taxiMinutes * 60_000] as [number, number]] : []),
+        [flight.runwayEntryStart, flight.runwayEntryStart + RUNWAY_ENTRY_MS],
+      ];
+  moving.push([flight.takeoffRollStart, flight.wheelsOff]);
+  const intervals = moving.map(([a, b]) => [Math.max(start, a), Math.min(end, b)] as const)
+    .filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0]);
+  let movingMs = 0, coveredUntil = start;
+  for (const [a, b] of intervals) {
+    movingMs += Math.max(0, b - Math.max(a, coveredUntil));
+    coveredUntil = Math.max(coveredUntil, b);
+  }
+  return Math.max(0, (end - start - movingMs) / 60_000);
+}
+
 export function departureWaitMinutesAt(flight: TimelineItem, time: number): number {
   const weather = flight.weather;
-  if (!weather) return tsatWaitMinutes(Math.min(time, flight.wheelsOff), departureTsatAt(flight, time));
+  if (!weather) return stationaryWaitMinutesAt(flight, time);
   if (time < weather.start) return departureWaitMinutesAt(weather.previous, time);
   // A suspension before startup cancels the old slot without a compliance penalty.
   if (weather.heldAtStand) return 0;

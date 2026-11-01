@@ -102,27 +102,16 @@ CTOT − 5 phút ≤ thời điểm cất cánh ≤ CTOT + 10 phút
 
 ### Cách tính tổng thời gian chờ
 
-Khi không có can thiệp thời tiết, chỉ số **TỔNG THỜI GIAN CHỜ** cộng thời gian từ **TSAT mới nhất đã được cấp** đến lúc cất cánh thực tế của từng chuyến. Trong lúc phát lại, chuyến chưa cất cánh được tính đến thời điểm hiện tại.
+Khi không có can thiệp thời tiết, chỉ số **TỔNG THỜI GIAN CHỜ** chỉ cộng các khoảng tàu đứng chờ từ **TSAT mới nhất đã được cấp** đến lúc cất cánh thực tế. Thời gian lăn ra, quay về stand, lăn lần hai, vào đường băng và chạy đà không được cộng. Với tuyến đường đã lập lịch, hệ thống phân biệt trực tiếp đoạn di chuyển và đoạn đứng yên, kể cả dừng giữa đường lăn.
 
-```text
-Trước TSAT:
-    Thời gian chờ chuyến = 0
-
-Từ TSAT đến khi cất cánh:
-    Thời gian chờ chuyến = thời điểm hiện tại − TSAT mới nhất
-
-Sau khi cất cánh:
-    Thời gian chờ chuyến = ATD − TSAT mới nhất
-```
-
-Ví dụ: RCD phát lúc **09:50**, TSAT **10:10**, cất cánh lúc **10:20** thì thời gian chờ là **10 phút**. Tàu xuất hiện tại stand ngay khi phát RCD; giai đoạn **09:50–10:10** chưa được cộng vào bộ đếm.
+Ví dụ: TSAT **10:10**, di chuyển trong 8 phút, đứng chờ 3 phút và chạy đà 1 phút trước khi bay lên lúc **10:22** thì tổng thời gian chờ là **3 phút**. Bộ đếm đứng yên khi tàu đang di chuyển và dừng sau khi cất cánh.
 
 Khi cấp **Revised TSAT**, bộ đếm sử dụng mốc mới từ thời điểm cấp và bằng 0 nếu chưa tới TSAT đó. Nếu chỉ cấp **Revised CTOT**, TSAT đang áp dụng được giữ làm mốc. Trạng thái tuân thủ CTOT được kiểm tra riêng với cửa sổ −5/+10 phút.
 
 ### Thời tiết xấu thủ công
 
 1. Chạy lịch và phát lại đến thời điểm muốn tạo tình huống.
-2. Bật **Thời tiết xấu** để dừng cấp phép cất/hạ cánh mới. Chuyển động đã được cho phép vào đường băng hoặc bắt đầu tiếp cận được xử lý theo trạng thái đang thực hiện.
+2. Bật **Thời tiết xấu** để dừng cấp phép cất/hạ cánh mới. Tàu đến còn trên không và tiếp cận trong khoảng ngừng tiếp nhận được chuyển hướng sang sân bay khác, không quay lại trong ngày mô phỏng. Tàu đã chạm bánh tiếp tục thoát đường băng và về stand; các lượt tiếp cận bắt đầu sau khi thời tiết tốt có thể được tiếp nhận bình thường.
 3. Đồng hồ tiếp tục chạy; hệ thống theo dõi CTOT và xử lý từng tàu theo vị trí, thời điểm hết hạn và khả năng tiếp nhận của stand.
 4. Tắt thời tiết xấu để khôi phục khai thác, cấp lại TSAT/CTOT theo trạng thái và tiếp tục điều phối.
 

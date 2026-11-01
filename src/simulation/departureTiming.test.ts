@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { runSimulation } from './runSimulation';
 import { applyWeatherPeriods } from './weather';
-import { clearanceRequestTime, departureWaitMinutesAt, tsatWaitMinutes } from './departureTiming';
+import { clearanceRequestTime, departureTsatAt, departureWaitMinutesAt, stationaryWaitMinutesAt } from './departureTiming';
 
 const minute = 60_000;
 const flight = () => runSimulation([{
@@ -15,31 +15,31 @@ describe('RCD appearance and TSAT waiting time', () => {
     expect(clearanceRequestTime(5 * minute, 0)).toBe(-15 * minute);
   });
 
-  it('counts TSAT to actual takeoff even for a compliant CTOT', () => {
+  it('excludes normal taxi and runway motion from the completed wait', () => {
     const departure = flight();
     expect(departure.missedCtot).toBe(false);
-    expect(departure.waitMinutes).toBe(tsatWaitMinutes(departure.wheelsOff, departure.tsat));
-    expect(departure.waitMinutes).toBeGreaterThan(0);
+    expect(departure.waitMinutes).toBeCloseTo(Math.max(0, (departure.runwayEntryStart - departure.taxiStart) / minute - departure.taxiMinutes));
+    expect(departure.waitMinutes).toBeGreaterThanOrEqual(0);
   });
 
   it('starts waiting at TSAT, independently of RCD, and stops at actual takeoff', () => {
     const departure = flight();
     expect(departureWaitMinutesAt(departure, departure.tsat - 10 * minute)).toBe(0);
     expect(departureWaitMinutesAt(departure, departure.tsat)).toBe(0);
-    expect(departureWaitMinutesAt(departure, departure.tsat + minute)).toBe(1);
+    expect(departureWaitMinutesAt(departure, departure.tsat + minute)).toBe(0);
     expect(departureWaitMinutesAt(departure, departure.wheelsOff + 10 * minute))
-      .toBe(tsatWaitMinutes(departure.wheelsOff, departure.tsat));
+      .toBe(departure.waitMinutes);
   });
 
   it('uses a revised TSAT only after it is issued and does not reset TSAT for revised CTOT', () => {
     const departure = flight();
     const revised = { ...departure, reissuedTsat: 100 * minute, returnEnd: 90 * minute,
       wheelsOff: 115 * minute };
-    expect(departureWaitMinutesAt(revised, 80 * minute)).toBe(20);
-    expect(departureWaitMinutesAt(revised, 95 * minute)).toBe(0);
-    expect(departureWaitMinutesAt(revised, 115 * minute)).toBe(15);
-    expect(departureWaitMinutesAt({ ...revised, reissuedTsat: null, reissuedCtot: 115 * minute }, 115 * minute))
-      .toBe(55);
+    expect(departureTsatAt(revised, 80 * minute)).toBe(departure.tsat);
+    expect(departureTsatAt(revised, 95 * minute)).toBe(100 * minute);
+    expect(departureTsatAt(revised, 115 * minute)).toBe(100 * minute);
+    expect(departureTsatAt({ ...revised, reissuedTsat: null, reissuedCtot: 115 * minute }, 115 * minute))
+      .toBe(departure.tsat);
   });
 
   it('keeps the latest TSAT when a subsequent weather period revises only CTOT', () => {
@@ -59,5 +59,22 @@ describe('RCD appearance and TSAT waiting time', () => {
     expect(departureWaitMinutesAt(recovered, 50 * minute)).toBe(0);
     expect(departureWaitMinutesAt(recovered, recovered.reissuedTsat!)).toBe(0);
     expect(recovered.waitMinutes).toBe(0);
+  });
+});
+
+describe('stationary surface waiting', () => {
+  it('counts a stop inside a taxi route, but not moving legs or takeoff roll', () => {
+    const departure = { ...flight(), tsat: 60 * minute, reissuedTsat: null,
+      wheelsOff: 76 * minute, takeoffRollStart: 75 * minute,
+      surfacePlan: { visibleFrom: 60 * minute, visibleUntil: 76 * minute, route: 'test', legs: [
+        { start: 60 * minute, end: 65 * minute, points: [{ x: 0, y: 0 }, { x: 10, y: 0 }], phase: 'taxi' },
+        { start: 65 * minute, end: 68 * minute, points: [{ x: 10, y: 0 }], phase: 'hold' },
+        { start: 68 * minute, end: 75 * minute, points: [{ x: 10, y: 0 }, { x: 20, y: 0 }], phase: 'taxi' },
+      ] } };
+    expect(stationaryWaitMinutesAt(departure, 64 * minute)).toBe(0);
+    expect(stationaryWaitMinutesAt(departure, 66 * minute)).toBe(1);
+    expect(stationaryWaitMinutesAt(departure, 70 * minute)).toBe(3);
+    expect(stationaryWaitMinutesAt(departure, 76 * minute)).toBe(3);
+    expect(stationaryWaitMinutesAt(departure, 90 * minute)).toBe(3);
   });
 });

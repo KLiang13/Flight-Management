@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { runSimulation, toScheduledFlights } from './runSimulation';
 import { ctotDelayMinutes } from './ctot';
-import { tsatWaitMinutes } from './departureTiming';
+import { stationaryWaitMinutesAt } from './departureTiming';
 
 describe('departure selection', () => {
   it('does not idle the runway behind a future slot while a valid flight is ready', () => {
@@ -12,7 +12,7 @@ describe('departure selection', () => {
     const plan = runSimulation(flights, true);
     expect(plan.flights[0].callsign).toBe('NOW');
     expect(ctotDelayMinutes(plan.flights[0].wheelsOff, plan.flights[0].ctot)).toBe(0);
-    expect(plan.flights[0].waitMinutes).toBe(tsatWaitMinutes(plan.flights[0].wheelsOff, plan.flights[0].tsat));
+    expect(plan.flights[0].waitMinutes).toBe(stationaryWaitMinutesAt(plan.flights[0], plan.flights[0].wheelsOff));
     expect(plan.flights[0].taxiStart).toBe(plan.flights[1].taxiStart);
   });
 
@@ -23,6 +23,6 @@ describe('departure selection', () => {
     }]));
     expect(plan.flights[0].wheelsOff).toBeGreaterThan(plan.flights[0].ctot + 600_000);
     expect(ctotDelayMinutes(plan.flights[0].wheelsOff, plan.flights[0].ctot)).toBeGreaterThan(10);
-    expect(plan.flights[0].waitMinutes).toBe(tsatWaitMinutes(plan.flights[0].wheelsOff, plan.flights[0].reissuedTsat ?? plan.flights[0].tsat));
+    expect(plan.flights[0].waitMinutes).toBe(stationaryWaitMinutesAt(plan.flights[0], plan.flights[0].wheelsOff));
   });
 });

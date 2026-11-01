@@ -54,8 +54,8 @@ describe('Flight operations dashboard', () => {
     expect(dclBoard).toHaveTextContent('RCD VNA123');
     expect(screen.getByRole('button', { name: /VNA123, tàu đi/ })).toBeInTheDocument();
     expect(screen.getByText('TỔNG THỜI GIAN CHỜ').closest('article')?.querySelector('.kpi-value')).toHaveTextContent('0 phút');
-    seek(tsat + 2 * 60_000);
-    expect(screen.getByText('TỔNG THỜI GIAN CHỜ').closest('article')?.querySelector('.kpi-value')).not.toHaveTextContent(/^0 phút$/);
+    seek(tsat + 1000);
+    expect(screen.getByText('TỔNG THỜI GIAN CHỜ').closest('article')?.querySelector('.kpi-value')).toHaveTextContent(/^0 phút$/);
     fireEvent.change(slider, { target: { value: '0' } });
     expect(screen.getByText('TỔNG THỜI GIAN CHỜ').closest('article')?.querySelector('.kpi-value')).toHaveTextContent('0 phút');
     const rain = screen.getByRole('switch', { name: 'Thời tiết xấu' });

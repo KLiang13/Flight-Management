@@ -119,19 +119,28 @@ describe('manual adverse weather', () => {
     }
   });
 
-  it('delays future arrivals and retains P5 runway crossing separation after recovery', () => {
+  it('diverts airborne arrivals and does not bring them back after recovery', () => {
     const base = runSimulation([flight('ONE', 10, 20)]).flights;
     const arrivals = scheduleArrivals([{
       CallSign: 'ARR', PlaneTypeCode: 'A321', Stand: '16', ScheduledArrival: new Date(25 * minute).toISOString(),
     }], base);
     const blocked = applyWeatherPeriods(base, arrivals, [{ start: 11 * minute, end: null }], '25L-25R');
-    expect(blocked.arrivals[0].touchdown).toBe(Infinity);
+    expect(blocked.arrivals[0].divertedAt).toBeDefined();
     const recovered = applyWeatherPeriods(base, arrivals, [{ start: 11 * minute, end: 50 * minute }], '25L-25R');
-    expect(recovered.arrivals[0].approachStart).toBeGreaterThanOrEqual(50 * minute);
-    for (const dep of recovered.flights) {
-      const arr = recovered.arrivals[0];
-      expect(arr.crossingEnd <= dep.runwayEntryStart || arr.crossingStart >= dep.wheelsOff + 10_000).toBe(true);
-    }
+    expect(recovered.arrivals[0].divertedAt).toBe(blocked.arrivals[0].divertedAt);
+    expect(recovered.arrivals[0].touchdown).toBe(arrivals[0].touchdown);
+    const noArrivals = applyWeatherPeriods(base, [], [{ start: 11 * minute, end: 50 * minute }], '25L-25R');
+    expect(recovered.flights.map(item => item.wheelsOff)).toEqual(noArrivals.flights.map(item => item.wheelsOff));
+  });
+
+  it('keeps arrivals already on the ground and accepts approaches after recovery', () => {
+    const base = runSimulation([flight('ONE', 10, 20)]).flights;
+    const arrivals = scheduleArrivals([
+      { CallSign: 'LANDED', PlaneTypeCode: 'A321', Stand: '16', ScheduledArrival: new Date(5 * minute).toISOString() },
+      { CallSign: 'LATER', PlaneTypeCode: 'A321', Stand: '17', ScheduledArrival: new Date(80 * minute).toISOString() },
+    ], base);
+    const plan = applyWeatherPeriods(base, arrivals, [{ start: 11 * minute, end: 50 * minute }], '25L-25R');
+    expect(plan.arrivals.every(arrival => arrival.divertedAt === undefined)).toBe(true);
   });
 });
 
@@ -169,7 +178,7 @@ describe('weather recovery with bundled workbooks', () => {
         expect(item.wakeCategory === 'H' && plan.flights[index - 1].wakeCategory === 'H').toBe(false);
       }
     }
-    for (const arrival of plan.arrivals) {
+    for (const arrival of plan.arrivals.filter(item => item.divertedAt === undefined)) {
       expect(Number.isFinite(arrival.standArrival)).toBe(true);
       for (const departure of plan.flights) {
         expect(arrival.crossingEnd <= departure.runwayEntryStart || arrival.crossingStart >= departure.wheelsOff + 10_000).toBe(true);

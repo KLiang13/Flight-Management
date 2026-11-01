@@ -4,6 +4,7 @@ import { taxiDuration, landingRollDuration } from './movementPhysics';
 import type { TimelineItem } from './runSimulation';
 
 export type ArrivalTimelineItem = {
+  divertedAt?: number;
   surfacePlan?: import('./surfaceTraffic').SurfacePlan;
   weather?: import('./weather').WeatherArrivalState;
   exitBranch?: 'P4' | 'P5';

@@ -1,5 +1,5 @@
 import { isWithinCtotWindow } from './ctot';
-import { tsatWaitMinutes } from './departureTiming';
+import { stationaryWaitMinutesAt, tsatWaitMinutes } from './departureTiming';
 import { optimizeFlights } from './optimizer';
 import { wakeCategory, type WakeCategory } from '../data/aircraft';
 import { getNearestReturnStand } from '../map/airfieldGeometry';
@@ -149,7 +149,7 @@ function runOrderedSimulation(ordered: ScheduledFlight[]): SimulationResult {
     });
   }
   result.sort((a, b) => a.wheelsOff - b.wheelsOff || a.id.localeCompare(b.id));
-  result.forEach((flight, index) => { flight.order = index + 1; });
+  result.forEach((flight, index) => { flight.order = index + 1; flight.waitMinutes = stationaryWaitMinutesAt(flight, flight.wheelsOff); });
   const totalWaitMinutes = result.reduce((sum, flight) => sum + flight.waitMinutes, 0);
   return {
     flights: result, totalWaitMinutes, missedCtot: result.filter((flight) => flight.missedCtot).length,
