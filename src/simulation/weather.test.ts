@@ -40,14 +40,14 @@ describe('manual adverse weather', () => {
     const result = applyWeatherPeriods(base, [], [{ start: 11 * minute, end: null }], '25L-25R');
     const delayed = result.flights[0];
     expect(delayed.wheelsOff).toBe(Infinity);
-    expect(weatherStatus(delayed, 30 * minute)?.missed).toBe(false);
+    expect(weatherStatus(delayed, 30 * minute)?.missed).toBe(true);
     expect(weatherStatus(delayed, 31 * minute)?.missed).toBe(true);
     expect(delayed.reissuedCtot).toBeNull();
     expect(delayed.weather!.returnStart).toBe(11 * minute);
     expect(departurePosition(delayed, 50 * minute, 0, '25L-25R').phase).toContain('stand');
   });
 
-  it('returns from the current position before point X, then issues finite slots on recovery', () => {
+  it('returns before point X and recovers without changing the started aircraft clocks', () => {
     const original = runSimulation([flight('ONE', 10, 20)]).flights[0];
     const base = [{ ...original, taxiMinutes: 40, runwayEntryStart: 50 * minute, takeoffRollStart: 50.3 * minute, wheelsOff: 52 * minute }];
     const rain = applyWeatherPeriods(base, [], [{ start: 11 * minute, end: null }], '25L-25R').flights[0];
@@ -57,10 +57,10 @@ describe('manual adverse weather', () => {
     expect(Math.hypot(before.x - after.x, before.y - after.y)).toBeLessThan(0.01);
     const recovered = applyWeatherPeriods(base, [], [{ start: 11 * minute, end: 50 * minute }], '25L-25R').flights[0];
     expect(recovered.reissuedTsat).toBeNull();
-    expect(recovered.reissuedCtot).toBe(recovered.wheelsOff);
+    expect(recovered.reissuedCtot).toBeNull();
     const events = weatherDclEvents([recovered], [{ start: 11 * minute, end: 50 * minute }]);
     expect(events.every((event) => formatDclMessage(event.message).length > 1)).toBe(true);
-    expect(events.some((event) => event.message.includes('CTOT REVISED'))).toBe(true);
+    expect(events.some((event) => event.message.includes('CTOT REVISED'))).toBe(false);
     expect(events.some((event) => event.message.includes('TSAT REVISED'))).toBe(false);
     expect(events.filter(event => event.message.includes('CTOT EXPIRED')).every(event => formatDclMessage(event.message).length === 2)).toBe(true);
     expect(recovered.runwayEntryStart).toBeGreaterThan(recovered.weather!.returnEnd!);
@@ -80,7 +80,7 @@ describe('manual adverse weather', () => {
     expect(waiting.secondTaxiStart).toBeGreaterThanOrEqual(70 * minute);
   });
 
-  it('lets an expired aircraft already beyond point X continue before a later startup', () => {
+  it('prioritizes an available valid slot before an expired aircraft after recovery', () => {
     const base = runSimulation([flight('EXPIRED', 10, 20), flight('VALID', 20, 50)]).flights;
     const start = base.find(item => item.id === 'EXPIRED')!.runwayEntryStart - 1;
     const result = applyWeatherPeriods(base, [], [{ start, end: 35 * minute }], '25L-25R');
@@ -89,7 +89,7 @@ describe('manual adverse weather', () => {
     expect(valid.weather?.missedAt).toBeNull();
     expect(valid.wheelsOff).toBeLessThanOrEqual(60 * minute);
     expect(expired.weather!.returnStand).toBeNull();
-    expect(expired.wheelsOff).toBeLessThan(valid.wheelsOff);
+    expect(valid.wheelsOff).toBeLessThan(expired.wheelsOff);
   });
 
   it('retains Medium aircraft needed between Heavy departures after rain', () => {
@@ -173,7 +173,7 @@ describe('weather recovery with bundled workbooks', () => {
       if (item.reissuedTsat !== null) {
         expect(item.reissuedCtot).toBeNull();
         expect(item.wheelsOff).toBeGreaterThanOrEqual(item.reissuedTsat + item.taxiMinutes * minute);
-      } else {
+      } else if (!item.weather?.returnedAfterStartup) {
         const slot = item.reissuedCtot ?? item.ctot;
         expect(item.wheelsOff).toBeGreaterThanOrEqual(slot - 5 * minute);
         expect(item.wheelsOff).toBeLessThanOrEqual(slot + 10 * minute);

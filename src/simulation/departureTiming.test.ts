@@ -42,12 +42,13 @@ describe('RCD appearance and TSAT waiting time', () => {
       .toBe(departure.tsat);
   });
 
-  it('keeps the latest TSAT when a subsequent weather period revises only CTOT', () => {
+  it('keeps both issued clocks when a subsequent shower returns a started aircraft', () => {
     const first = applyWeatherPeriods([flight()], [], [{ start: 55 * minute, end: 100 * minute }], '25L-25R').flights[0];
     const start = first.reissuedTsat! + minute;
     const second = applyWeatherPeriods([first], [], [{ start, end: start + 30 * minute }], '25L-25R').flights[0];
     expect(second.reissuedTsat).toBeNull();
-    expect(second.reissuedCtot).not.toBeNull();
+    expect(second.reissuedCtot).toBeNull();
+    expect(departureCtotAt(second, second.wheelsOff)).toBe(departureCtotAt(first, start));
     expect(departureTsatAt(second, second.wheelsOff)).toBe(first.reissuedTsat);
     expect(departureWaitMinutesAt(second, second.wheelsOff)).toBe(second.waitMinutes);
   });
@@ -87,12 +88,12 @@ describe('CTOT displayed at replay time', () => {
     expect(departureCtotAt(recovered, 100 * minute)).toBe(recovered.wheelsOff);
     expect(departureCtotAt(recovered, 50 * minute)).toBe(original.ctot);
   });
-  it('revises only CTOT for an aircraft that already started taxiing', () => {
+  it('preserves CTOT and TSAT for a started aircraft returned by rain', () => {
     const original = flight();
     const recovered = applyWeatherPeriods([original], [], [{ start: original.taxiStart + minute, end: 100 * minute }], '25L-25R').flights[0];
     expect(recovered.reissuedTsat).toBeNull();
-    expect(recovered.reissuedCtot).toBe(recovered.wheelsOff);
+    expect(recovered.reissuedCtot).toBeNull();
     expect(departureTsatAt(recovered, 100 * minute)).toBe(original.tsat);
-    expect(departureCtotAt(recovered, 100 * minute)).toBe(recovered.reissuedCtot);
+    expect(departureCtotAt(recovered, 100 * minute)).toBe(original.ctot);
   });
 });

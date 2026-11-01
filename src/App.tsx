@@ -167,13 +167,27 @@ function App() {
   const currentSchedule = useMemo(() => imported?.enrichedRows.filter(isDepartureFromTsn) ?? [], [imported]);
   const dailySchedule = useMemo(() => currentSchedule.filter((row) => toDayString(row.FlyDate ?? row.Date) === day), [currentSchedule, day]);
   const dailyArrivals = useMemo(() => imported?.enrichedRows.filter((row) => isArrivalAtTsn(row) && toDayString(row.FlyDate ?? row.Date) === day) ?? [], [imported, day]);
-  const weatherPlan = useMemo(() => applyWeatherPeriods(baselineFlights, baselineArrivals, weatherPeriods, runway),
-    [baselineFlights, baselineArrivals, weatherPeriods, runway]);
+  const timeCursor = new Date(day + 'T00:00:00').getTime() + minute * 60_000;
+  const dayStart = new Date(day + 'T00:00:00').getTime();
+  const weatherHorizon = weatherPeriods.some(period => period.end === null)
+    ? baselineFlights.reduce((latest, flight) => { const request = flight.tsat - 20 * 60_000; return request <= timeCursor ? Math.max(latest, request) : latest; }, -Infinity)
+    : Infinity;
+  const lastSafeWeatherPlan = useRef<{ source: typeof baselineFlights; plan: { flights: typeof baselineFlights; arrivals: typeof baselineArrivals } } | null>(null);
+  const weatherPlan = useMemo(() => {
+    try { return { ...applyWeatherPeriods(baselineFlights, baselineArrivals, weatherPeriods, runway, weatherHorizon), error: '' }; }
+    catch (error) {
+      const previous = lastSafeWeatherPlan.current;
+      const plan = previous?.source === baselineFlights ? previous.plan : { flights: baselineFlights, arrivals: baselineArrivals };
+      return { ...plan, error: (error as Error).message };
+    }
+  }, [baselineFlights, baselineArrivals, weatherPeriods, runway, weatherHorizon]);
+  useEffect(() => {
+    if (weatherPlan.error) setPlaying(false);
+    else lastSafeWeatherPlan.current = { source: baselineFlights, plan: weatherPlan };
+  }, [weatherPlan, baselineFlights]);
   const { flights, arrivals } = weatherPlan;
   const holdingPoint = getHoldingPoint(runway);
   const runwaySegment = getRunwaySegment(runway);
-  const timeCursor = new Date(day + 'T00:00:00').getTime() + minute * 60_000;
-  const dayStart = new Date(day + 'T00:00:00').getTime();
   const badWeather = proposed ? weatherPeriods.some((period) => period.start <= timeCursor && (period.end === null || timeCursor < period.end)) : weatherRequested;
   const openWeather = weatherPeriods.some((period) => period.end === null);
   const latestMovement = Math.max(...flights.map((flight) => flight.wheelsOff).filter(Number.isFinite), ...arrivals.filter(flight => flight.divertedAt === undefined).map((flight) => flight.standArrival).filter(Number.isFinite), 0);
@@ -340,6 +354,7 @@ function App() {
 
   return (
     <main className={`app-shell ${focusMode ? 'focus-mode' : ''}`}>
+      {weatherPlan.error && <div role="alert">Tạm dừng phát lại: {weatherPlan.error}</div>}
       <header className="topbar">
         <a className="brand" href="#top" aria-label="Flight operations home">
           <span className="brand-mark"><Plane size={19} strokeWidth={2.3} /></span>
@@ -382,7 +397,7 @@ function App() {
 
       <section className="playback-bar" aria-label="Điều khiển phát lại">
         <div className="playback-label"><span className={`playback-dot ${playing ? 'active' : ''}`} /><span>{playing ? 'ĐANG PHÁT' : 'PHÁT LẠI 24 GIỜ'}</span></div>
-        <button className="play-button" aria-label={playing ? 'Tạm dừng mô phỏng' : 'Phát mô phỏng'} onClick={() => { if (!proposed) runDay(); else setPlaying(!playing); }}><span>{playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</span>{playing ? 'Tạm dừng' : 'Phát'}</button>
+        <button className="play-button" disabled={Boolean(weatherPlan.error)} aria-label={playing ? 'Tạm dừng mô phỏng' : 'Phát mô phỏng'} onClick={() => { if (!proposed) runDay(); else setPlaying(!playing); }}><span>{playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</span>{playing ? 'Tạm dừng' : 'Phát'}</button>
         <button className="play-button" aria-label="Lùi 10 giây" title="Lùi 10 giây" disabled={!proposed} onClick={() => setMinute(current => Math.max(playbackStartMinute, current - 10 / 60))}>↶ 10s</button>
         <div className="timeline-control"><span className="timeline-start">{fmtShort(dayStart + playbackStartMinute * 60_000)}</span><input aria-label="Tua thời gian mô phỏng" type="range" min={playbackStartMinute} max={playbackEndMinute} step={1} value={minute} style={{ '--progress': String((minute - playbackStartMinute) / (playbackEndMinute - playbackStartMinute) * 100) + '%' } as React.CSSProperties} onChange={(event) => setMinute(Number(event.target.value))} /><span className="timeline-end">{playbackEndLabel}</span></div>
         <div className="clock-display"><Clock3 size={15} /><strong>{Math.floor(clockMinute / 60).toString().padStart(2, '0')}:{Math.floor(clockMinute % 60).toString().padStart(2, '0')}</strong><span>LT{minute >= 1440 ? ' +1' : minute < 0 ? ' −1' : ''}</span></div>
@@ -424,7 +439,7 @@ function App() {
                     {chosen && <g className="marker-label"><rect x="12" y="-16" width="92" height="23" rx="5" /><text x="20" y="0">{flight.callsign}</text></g>}
                   </g>;
                 })}
-                {arrivals.filter((flight) => timeCursor < (flight.divertedAt ?? Infinity) && timeCursor >= (flight.weather?.previous.approachStart ?? flight.approachStart) && timeCursor <= (flight.weather ? dayStart + playbackEndMinute * 60_000 : flight.surfacePlan?.visibleUntil ?? dayStart + playbackEndMinute * 60_000)).map((flight) => {
+                {arrivals.filter((flight) => timeCursor < (flight.divertedAt ?? Infinity) && timeCursor >= (flight.weather?.surfacePlan?.visibleFrom ?? flight.weather?.previous.approachStart ?? flight.approachStart) && timeCursor <= (flight.weather?.surfacePlan?.visibleUntil ?? (flight.weather ? dayStart + playbackEndMinute * 60_000 : flight.surfacePlan?.visibleUntil ?? dayStart + playbackEndMinute * 60_000))).map((flight) => {
                   const position = arrivalPosition(flight, timeCursor);
                   const chosen = selectedFlight === flight.callsign;
                   return <g key={flight.id} className={`aircraft-marker arrival ${chosen ? 'selected' : ''}`}

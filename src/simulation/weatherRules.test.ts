@@ -12,6 +12,28 @@ const base = (startup: number, slot: number) => runSimulation([{
 }]).flights[0];
 
 describe('weather suspension rules', () => {
+  it('issues the initial CLD after rain even if the TSAT has not changed', () => {
+    const planned = base(100, 110);
+    const periods = [{ start: 80.3 * minute, end: 85 * minute }];
+    const recovered = applyWeatherPeriods([planned], [], periods, '25L-25R').flights[0];
+    const requests = createDclEvents('D', 80 * minute, 13, { tsat: planned.tsat }).map(event => ({ ...event, flightId: 'D' }));
+    const messages = composeWeatherDclEvents(requests, [recovered], periods);
+    const cld = messages.filter(event => event.message.startsWith('CLD '));
+    expect(cld).toHaveLength(1);
+    expect(cld[0].time).toBe(85 * minute);
+    expect(cld[0].message).toContain(requests.find(event => event.message.startsWith('CLD '))!.message.split(' TSAT ')[1]);
+    expect(cld[0].message).not.toContain('REVISED');
+  });
+
+  it('keeps the acknowledgement when rain starts between CLD and CDA', () => {
+    const planned = base(100, 110);
+    const periods = [{ start: 80 * minute + 50_000, end: 85 * minute }];
+    const recovered = applyWeatherPeriods([planned], [], periods, '25L-25R').flights[0];
+    const requests = createDclEvents('D', 80 * minute, 13, { tsat: planned.tsat }).map(event => ({ ...event, flightId: 'D' }));
+    const messages = composeWeatherDclEvents(requests, [recovered], periods);
+    expect(messages.filter(event => event.message.startsWith('CLD '))).toHaveLength(1);
+    expect(messages.filter(event => event.message.startsWith('CDA '))).toHaveLength(1);
+  });
   it('TH1 counts 16 minutes at 13:46 against the old 13:30 tolerance end', () => {
     const planned = base(790, 800);
     const recovered = applyWeatherPeriods([planned], [], [{ start: planned.runwayEntryStart - 1, end: 825 * minute }], '25L-25R').flights[0];
@@ -70,7 +92,7 @@ describe('weather suspension rules', () => {
     expect(suspended.map(event => event.message.split(' ')[0])).toEqual(['RCD']);
     expect(suspended.some(event => event.status === 'TIMEOUT' || event.message.includes('VOICE'))).toBe(false);
     expect(combined.filter(event => event.message.startsWith('RCD '))).toHaveLength(1);
-    expect(combined.some(event => event.message.startsWith('CLD ') && event.time === 85 * minute)).toBe(false);
+    expect(combined.some(event => event.message.startsWith('CLD ') && event.time === 85 * minute)).toBe(true);
   });
 
   it('pauses a pending clearance even when RCD was sent just before rain', () => {
@@ -80,7 +102,7 @@ describe('weather suspension rules', () => {
     const requests = createDclEvents('D', 80 * minute, 13).map(event => ({ ...event, flightId: 'D' }));
     const combined = composeWeatherDclEvents(requests, [recovered], periods);
     expect(combined.some(event => event.status === 'TIMEOUT' || event.message.includes('VOICE'))).toBe(false);
-    expect(combined.some(event => event.message.startsWith('CLD ') && event.time === 85 * minute)).toBe(false);
+    expect(combined.some(event => event.message.startsWith('CLD ') && event.time === 85 * minute)).toBe(true);
   });
 
   it('preserves the actual runway-entry progress across two rain interruptions', () => {

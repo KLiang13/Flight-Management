@@ -11,14 +11,14 @@ import { releaseTakeoffRoll, arrivalDelayForBookedRolls, reserveCrossingsBeforeD
 
 export type SurfaceLeg = { start: number; end: number; points: MapPoint[]; phase: string };
 export type SurfacePlan = { visibleFrom: number; visibleUntil: number; legs: SurfaceLeg[]; route: string };
-type Sample = MapPoint & { radius: number };
+type Sample = MapPoint & { radius: number; owner?: string };
 const STEP = 2000;
 const CELL = 40;
 const MAX_RESCHEDULE_MS = 48 * 60 * 60_000;
 
 // Space-time reservations cover the rendered trajectories, including junctions
 // shared by differently named routes. No aircraft can pass through a waiting one.
-class Reservations {
+export class Reservations {
   lastConflictDelay = STEP;
   private cells = new Map<string, Sample[]>();
   private parked = new Map<string, (Sample & { start: number; end: number })[]>();
@@ -40,9 +40,9 @@ class Reservations {
     }
     return true;
   }
-  available(legs: SurfaceLeg[], radius: number): boolean {
+  available(legs: SurfaceLeg[], radius: number, owner?: string): boolean {
     this.lastConflictDelay = STEP;
-    const near = (a: MapPoint, b: Sample) => Math.hypot(a.x - b.x, a.y - b.y) < radius + b.radius;
+    const near = (a: MapPoint, b: Sample) => (owner === undefined || b.owner !== owner) && Math.hypot(a.x - b.x, a.y - b.y) < radius + b.radius;
     for (const item of legs) {
       if (item.end <= item.start) continue;
       if (item.points.length === 1) {
@@ -61,19 +61,19 @@ class Reservations {
     }
     return true;
   }
-  reserve(legs: SurfaceLeg[], radius: number) {
+  reserve(legs: SurfaceLeg[], radius: number, owner?: string) {
     for (const item of legs) {
       if (item.end <= item.start) continue;
       if (item.points.length === 1) {
         const point = item.points[0], key = `${Math.floor(point.x / CELL)}:${Math.floor(point.y / CELL)}`;
         const entries = this.parked.get(key) ?? [];
-        entries.push({ ...point, radius, start: item.start, end: item.end }); this.parked.set(key, entries);
+        entries.push({ ...point, radius, owner, start: item.start, end: item.end }); this.parked.set(key, entries);
       } else this.samples(item, (time, point) => {
         const x = Math.floor(point.x / CELL), y = Math.floor(point.y / CELL), key = this.key(time, x, y);
         const cell = this.cells.get(key) ?? [];
-        cell.push({ ...point, radius }); this.cells.set(key, cell);
+        cell.push({ ...point, radius, owner }); this.cells.set(key, cell);
         const spatial = `${x}:${y}`, entries = this.moving.get(spatial) ?? [];
-        entries.push({ ...point, radius, time }); this.moving.set(spatial, entries); return true;
+        entries.push({ ...point, radius, owner, time }); this.moving.set(spatial, entries); return true;
       });
     }
   }

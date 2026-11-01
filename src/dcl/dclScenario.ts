@@ -49,17 +49,13 @@ export function createDclEvents(callsign: string, baseTime: number, seed: number
   const stand = context.stand || '12';
   const runway = context.runway?.split('-')[0] || '25L';
   const slot = context.tsat ? hhmm(context.tsat) : hhmm(baseTime);
-  const exceptional = false;
   void seed;
   const events: DclEvent[] = [
     { id: `${callsign}-rcd`, time: baseTime, callsign, direction: 'Tổ lái → Hệ thống', message: `RCD ${callsign}-${origin}-STAND ${stand}-${destination} ATIS B-TYP/${aircraftType}-RMK/`, status: 'OK' },
     { id: `${callsign}-fsm`, time: baseTime + 15_000, callsign, direction: 'Hệ thống → Tổ lái', message: `FSM ${hhmm(baseTime + 15_000)} ${ddmmyy(baseTime)} ${origin} ${callsign} RCD RECEIVED REQUEST BEING PROCESSED STANDBY`, status: 'OK' },
   ];
-  if (exceptional) {
-    events.push({ id: `${callsign}-rej`, time: baseTime + 35_000, callsign, direction: 'Hệ thống → Tổ lái', message: `FSM ${hhmm(baseTime + 35_000)} ${ddmmyy(baseTime)} ${origin} ${callsign} RCD REJECTED REVERT TO VOICE PROCEDURES`, status: seed % 2 ? 'TỪ CHỐI' : 'TIMEOUT' });
-    events.push({ id: `${callsign}-rcd2`, time: baseTime + 95_000, callsign, direction: 'Tổ lái → Hệ thống', message: `RCD ${callsign}-${origin}-STAND ${stand}-${destination} ATIS B-TYP/${aircraftType}-RMK/ (RETRY)`, status: 'OK' });
-  }
-  const clearanceTime = baseTime + (exceptional ? 120_000 : 40_000);
+
+  const clearanceTime = baseTime + 40_000;
   events.push(
     { id: `${callsign}-cld`, time: clearanceTime, callsign, direction: 'Hệ thống → Tổ lái', message: `CLD ${hhmm(clearanceTime)} ${ddmmyy(baseTime)} ${origin} PDC 001 ${callsign} CLRD TO ${destination} OFF ${runway} VIA SID DEMO1 SQUAWK 2201 TSAT ${slot}`, status: 'OK' },
     { id: `${callsign}-cda`, time: clearanceTime + 25_000, callsign, direction: 'Tổ lái → Hệ thống', message: `CDA ${hhmm(clearanceTime + 25_000)} ${ddmmyy(baseTime)} ${origin} ${callsign} CDA RECEIVED CLEARANCE CONFIRMED`, status: 'OK' },

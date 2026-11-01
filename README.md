@@ -36,10 +36,9 @@ Giao diện sử dụng tiếng Việt cùng thuật ngữ hàng không. Việc 
 | **Tàu đến** | Tiếp cận 25R, hạ cánh, ưu tiên thoát P4, dùng P5 khi tuyến ưu tiên bận, chờ cắt 25L rồi lăn về stand |
 | **Điều phối** | Xét cửa sổ CTOT, hạng H/M, khả năng tiếp nhận của stand và chiếm dụng tuyến đường lăn |
 | **Thời tiết** | Bật/tắt thời tiết xấu thủ công; xử lý hết hạn CTOT; tự khôi phục lịch khi thời tiết tốt trở lại |
-| **Điện văn DCL** | RCD → FSM → CLD → CDA; nội dung theo từng dòng; thông báo hết hạn và điều chỉnh TSAT/CTOT |
+| **Điện văn DCL** | RCD → FSM → CLD → CDA; luôn chấp nhận yêu cầu; thông báo hết hạn và TSAT; ẩn điện văn cấp CTOT |
 | **Phát lại** | Phát/tạm dừng, tua thời gian, tốc độ 1×, 10×, 30×, 60×; tiếp tục sang ngày kế tiếp nếu lịch kết thúc muộn |
 | **Theo dõi kết quả** | Tổng chuyến, tổng thời gian chờ, số chuyến không tuân thủ CTOT; hàng chờ có tìm kiếm và lọc trạng thái |
-| **Ghi workbook** | Ghi các trường kết quả vào tệp đã mở khi trình duyệt có quyền ghi trực tiếp |
 
 ## Quy tắc điều phối
 
@@ -95,10 +94,10 @@ CTOT − 5 phút ≤ thời điểm cất cánh ≤ CTOT + 10 phút
 | Trạng thái khi hết hạn CTOT | Cách xử lý |
 | --- | --- |
 | Còn tại stand | Tiếp tục chờ tại stand, nhận **TSAT mới** |
-| Đã lăn, chưa qua điểm X | Bố trí quay về vị trí đỗ khả dụng gần nhất và chờ cấp lịch mới |
+| Đã lăn, phải quay về stand vì mưa | Ghi **Không tuân thủ CTOT**, giữ TSAT/CTOT đã cấp, xếp sau các chuyến còn slot hợp lệ |
 | Đã qua điểm X | Được tiếp tục khởi hành, đánh dấu **Không tuân thủ CTOT** và xử lý **CTOT mới** |
 
-Điều chỉnh khi thời tiết xấu được phân biệt theo trạng thái khởi động: tàu chưa khởi động sử dụng **Revised TSAT** theo CTOT mới; tàu đã khởi động sử dụng **Revised CTOT**, giữ nguyên TSAT kể cả khi phải quay về stand. Điện văn hết hạn chỉ thông báo **CTOT EXPIRED**, không yêu cầu chờ TSAT mới cho tàu đã nổ máy. Cột **CTOT** hiển thị giờ mới từ thời điểm cấp lại; khi tua về trước thời điểm cấp, cột hiển thị giờ cũ. CTOT gốc được giữ trong dữ liệu để đối chiếu tuân thủ.
+Tàu chưa khởi động có thể nhận **Revised TSAT** theo lịch khôi phục. Riêng tàu đã lăn rồi phải quay về stand vì mưa giữ nguyên cả TSAT và CTOT đã cấp; không phát sinh giờ mới cho trường hợp này. Thời gian khởi hành thực tế vẫn được lập lịch lại để bảo đảm phân cách. Tàu còn CTOT hợp lệ được ưu tiên trước tàu quá hạn; ràng buộc không có hai tàu H liên tiếp vẫn được duy trì. Thông tin CTOT mới của các trường hợp khác được xử lý ngầm và cập nhật trong bảng, không phát điện văn cấp CTOT trên DCL.
 
 ### Cách tính tổng thời gian chờ
 
@@ -110,14 +109,16 @@ Khi cấp **Revised TSAT**, bộ đếm sử dụng mốc mới từ thời đi�
 
 ### Thời tiết xấu thủ công
 
-Sau khi hết mưa, giữ CTOT đang áp dụng nếu thời điểm cất cánh dự kiến vẫn nằm trong cửa sổ −5/+10 phút. Tàu chưa nổ máy có thể nhận TSAT mới mà không đổi CTOT; tàu đã nổ máy giữ TSAT cũ. Chỉ cấp CTOT mới khi lịch di chuyển và chạy đà không còn đáp ứng cửa sổ cũ, kể cả khi mưa kết thúc trước CTOT +10 phút.
+Sau khi hết mưa, tàu chưa nổ máy có thể nhận TSAT mới và giữ CTOT nếu còn đáp ứng cửa sổ cũ. Tàu đã nổ máy luôn giữ TSAT. Tàu đã lăn rồi phải quay về stand giữ cả CTOT cũ và được xếp vào nhóm không tuân thủ; không cấp lại TSAT hoặc CTOT cho nhóm này.
 
 1. Chạy lịch và phát lại đến thời điểm muốn tạo tình huống.
 2. Bật **Thời tiết xấu** để dừng cấp phép cất/hạ cánh mới. Tàu đến còn trên không và tiếp cận trong khoảng ngừng tiếp nhận được chuyển hướng sang sân bay khác, không quay lại trong ngày mô phỏng. Tàu đã chạm bánh tiếp tục thoát đường băng và về stand; các lượt tiếp cận bắt đầu sau khi thời tiết tốt có thể được tiếp nhận bình thường.
-3. Ngay khi bắt đầu mưa, tàu đang lăn nhưng chưa vượt điểm đèn trên TWY S gần S1 sẽ theo nhánh cong cạnh 1A xuống TWY V để về stand trống gần nhất. Quyết định dựa trên vị trí tại lúc bắt đầu mưa, không chờ CTOT hết hạn. Tàu đã vượt đèn tiếp tục đến S1, chờ hết mưa và lượt vào 25L mới. Tàu chưa rời stand giữ nguyên vị trí đỗ. Việc đánh dấu CTOT EXPIRED vẫn chỉ xảy ra sau CTOT +10 phút.
+3. Ngay khi bắt đầu mưa, tàu đang lăn nhưng chưa vượt điểm đèn trên TWY S gần S1 sẽ theo nhánh cong cạnh 1A xuống TWY V để về stand trống gần nhất và được ghi nhận **Không tuân thủ CTOT**. Tàu đã vượt đèn tiếp tục đến S1, chờ hết mưa và lượt vào 25L. Tàu đang đỗ giữ vị trí; nếu tàu sau đến giờ RCD mà bị trùng stand do mưa, hệ thống cấp stand trống khác và đồng bộ vị trí đó với RCD.
 4. Tắt thời tiết xấu để khôi phục khai thác, cấp lại TSAT/CTOT theo trạng thái và tiếp tục điều phối.
 
 Các lần bật/tắt được lưu theo dòng thời gian. Khi tua về quá khứ rồi thay đổi thời tiết, kịch bản sau thời điểm đó được tính lại.
+
+Các tuyến quay về, lăn lại và giao cắt sau mưa được kiểm tra bằng cơ chế đặt chỗ theo không gian–thời gian dùng cho đường lăn thông thường. Thứ tự quay về để giải phóng đường lăn được lập riêng với thứ tự cất cánh. Khi mưa chưa có giờ kết thúc, chỉ những tàu đã tới mốc RCD mới được xét chiếm stand. Nếu không tìm được lịch an toàn, phát lại tạm dừng và hiển thị lỗi thay vì tiếp tục chuyển động xung đột.
 
 Quy tắc tính chờ khi có thời tiết xấu:
 
@@ -138,7 +139,7 @@ Mặc định bảng hiển thị 8 điện văn gần nhất. Nút **Xem lịch
 | Bản tin | Vai trò trong kịch bản |
 | --- | --- |
 | **RCD** | Tổ lái gửi yêu cầu huấn lệnh khởi hành |
-| **FSM** | Phản hồi đã nhận, đang xử lý, chờ, từ chối hoặc thông báo điều chỉnh |
+| **FSM** | Phản hồi đã nhận, đang xử lý hoặc thông báo hết hạn/điều chỉnh |
 | **CLD** | Cấp huấn lệnh khởi hành, kèm thông tin TSAT |
 | **CDA** | Tổ lái xác nhận đã nhận huấn lệnh |
 
@@ -152,9 +153,11 @@ SQUAWK 2201
 TSAT 1305
 ```
 
-Kịch bản còn có nhánh từ chối/timeout, yêu cầu gửi lại, thông báo `CTOT EXPIRED`, `TSAT REVISED`, `CTOT REVISED` và khôi phục sau thời tiết xấu.
+Trong kịch bản của ứng dụng, mọi RCD được chấp nhận; không sinh từ chối, timeout hoặc yêu cầu chuyển thoại. DCL có thể thông báo `CTOT EXPIRED` và `TSAT REVISED`, nhưng không hiển thị điện văn cấp CTOT.
 
-RCD phát đúng **TSAT ban đầu −20 phút**, kể cả khi thời tiết xấu đã xuất hiện; dòng thời gian hỗ trợ RCD trước 00:00 của ngày khai thác. Thông báo ADVERSE WEATHER / STANDBY và WEATHER IMPROVED nằm trong bảng thời tiết độc lập, không đưa vào luồng DCL và không phụ thuộc RCD của từng tàu. Trong thời gian ngừng cấp phép, kịch bản tạm ngưng nhánh timeout/gửi lại/chuyển thoại cho giao dịch bị ảnh hưởng. Sau khi khôi phục, ATC gửi CLD với TSAT cấp lại (hoặc CTOT khi tàu đã rời stand), tiếp theo là CDA. Đây là quy tắc chờ thời tiết của mô hình, không mô phỏng lỗi đường truyền datalink.
+RCD phát đúng **TSAT ban đầu −20 phút**, kể cả khi thời tiết xấu đã xuất hiện; dòng thời gian hỗ trợ RCD trước 00:00. Thông báo **ADVERSE WEATHER** và **WEATHER IMPROVED** nằm trong bảng thời tiết độc lập. Nếu chưa cấp CLD trước mưa, sau mưa ATC vẫn cấp CLD với TSAT đang áp dụng: giữ giờ cũ nếu không đổi, hiển thị giờ mới nếu đã điều chỉnh. CDA xác nhận CLD đã cấp vẫn được giữ khi mưa xuất hiện giữa hai bản tin. Khi đã cấp CLD và TSAT không đổi, không phát lại CLD chỉ để thông báo CTOT.
+
+Thanh phát lại có nút **Lùi 10 giây**, thanh tua và các tốc độ phát; bản tin và vị trí hiển thị theo thời điểm đang xem.
 
 ## Dữ liệu đầu vào
 
@@ -231,13 +234,13 @@ npm run dev -- --port 4175
 3. Dùng **Phát/Tạm dừng**, thanh thời gian và tốc độ để quan sát các lượt đi/đến.
 4. Chọn tàu trên bản đồ hoặc trong hàng chờ để theo dõi; dùng tìm kiếm và bộ lọc khi cần.
 5. Bật/tắt **Thời tiết xấu** để xem xử lý hết hạn và khôi phục lịch.
-6. Với tệp được mở bằng quyền ghi trực tiếp, dùng **Ghi vào workbook** để lưu kết quả.
+6. Dùng **Lùi 10 giây** hoặc **Xem lịch sử** để kiểm tra các điện văn trước đó.
 
-### Ghi kết quả về tệp nguồn
+### Dữ liệu kết quả
 
-Tính năng ghi cần file handle do trình duyệt cấp và môi trường an toàn như HTTPS hoặc localhost. Nếu chưa có quyền ghi, nút lưu không khả dụng; đọc tệp và chạy mô phỏng vẫn thực hiện được.
+Giao diện không có nút ghi workbook. Khi chạy mô phỏng, ứng dụng giữ các trường kết quả trong bộ nhớ và không tự sửa tệp nguồn của người dùng.
 
-Các trường kết quả gồm `TSAT`, `ActualTakeoff`, `RunwayEntry`, `TakeoffRollStart`, `ReissuedCTOT`, `ReissuedTSAT`, `ReturnStand`, `QueueOrder` và `SimulationStatus`, cùng các trường chuẩn hóa phục vụ mô phỏng. Việc ghi dùng SheetJS; không bảo đảm giữ nguyên toàn bộ định dạng trình bày đặc thù của workbook gốc.
+Các trường kết quả gồm `TSAT`, `ActualTakeoff`, `RunwayEntry`, `TakeoffRollStart`, `ReissuedCTOT`, `ReissuedTSAT`, `ReturnStand`, `QueueOrder` và `SimulationStatus`, cùng các trường chuẩn hóa phục vụ mô phỏng. Các trường `ReissuedCTOT`/`ReissuedTSAT` không được tạo mới cho tàu đã lăn rồi phải quay về stand vì thời tiết.
 
 ## Kiến trúc và phương pháp xếp lịch
 
