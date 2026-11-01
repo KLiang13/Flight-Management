@@ -1,16 +1,16 @@
 import type { ArrivalTimelineItem } from './arrivals';
 import { getArrivalRoutePoints } from '../map/airfieldGeometry';
-import { RUNWAY_CLEARANCE_MS } from './movementPhysics';
+import { RUNWAY_CLEARANCE_MS, METRES_PER_PIXEL } from './movementPhysics';
 
 // Right-hand 25R threshold on the native 2048 × 1413 parking chart.
 export const ARRIVAL_25R_THRESHOLD_X = 1660;
 
 export function arrivalThresholdClearAt(arrival: ArrivalTimelineItem): number {
   if (!Number.isFinite(arrival.approachStart) || !Number.isFinite(arrival.touchdown)) return Infinity;
-  const radius = arrival.wakeCategory === 'H' ? 15 : 9;
   const approach = getArrivalRoutePoints(arrival.stand, arrival.exitBranch).approach;
   const start = approach[0], end = approach.at(-1)!;
-  const progress = Math.max(0, Math.min(1, (start.x - (ARRIVAL_25R_THRESHOLD_X - radius)) / (start.x - end.x)));
+  const clearedX = ARRIVAL_25R_THRESHOLD_X - 65 / METRES_PER_PIXEL;
+  const progress = Math.max(0, Math.min(1, (start.x - clearedX) / (start.x - end.x)));
   return Math.ceil(arrival.approachStart + (arrival.touchdown - arrival.approachStart) * progress);
 }
 

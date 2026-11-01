@@ -10,9 +10,9 @@ const flight = () => runSimulation([{
 }]).flights[0];
 
 describe('RCD appearance and TSAT waiting time', () => {
-  it('requests clearance ten minutes before TSAT, bounded by the operating day', () => {
-    expect(clearanceRequestTime(60 * minute, 0)).toBe(50 * minute);
-    expect(clearanceRequestTime(5 * minute, 0)).toBe(0);
+  it('requests clearance exactly twenty minutes before TSAT, including before midnight', () => {
+    expect(clearanceRequestTime(60 * minute, 0)).toBe(40 * minute);
+    expect(clearanceRequestTime(5 * minute, 0)).toBe(-15 * minute);
   });
 
   it('counts TSAT to actual takeoff even for a compliant CTOT', () => {
@@ -48,7 +48,7 @@ describe('RCD appearance and TSAT waiting time', () => {
     const second = applyWeatherPeriods([first], [], [{ start, end: start + 9 * minute }], '25L-25R').flights[0];
     expect(second.reissuedTsat).toBeNull();
     expect(second.reissuedCtot).not.toBeNull();
-    expect(second.waitMinutes).toBe(tsatWaitMinutes(second.wheelsOff, first.reissuedTsat!));
+    expect(second.waitMinutes).toBe(0);
     expect(departureWaitMinutesAt(second, second.wheelsOff)).toBe(second.waitMinutes);
   });
 
@@ -58,6 +58,6 @@ describe('RCD appearance and TSAT waiting time', () => {
     expect(recovered.reissuedTsat).not.toBeNull();
     expect(departureWaitMinutesAt(recovered, 50 * minute)).toBe(0);
     expect(departureWaitMinutesAt(recovered, recovered.reissuedTsat!)).toBe(0);
-    expect(recovered.waitMinutes).toBe(tsatWaitMinutes(recovered.wheelsOff, recovered.reissuedTsat!));
+    expect(recovered.waitMinutes).toBe(0);
   });
 });

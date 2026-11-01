@@ -102,7 +102,7 @@ CTOT − 5 phút ≤ thời điểm cất cánh ≤ CTOT + 10 phút
 
 ### Cách tính tổng thời gian chờ
 
-Chỉ số **TỔNG THỜI GIAN CHỜ** cộng thời gian từ **TSAT mới nhất đã được cấp** đến lúc cất cánh thực tế của từng chuyến. Trong lúc phát lại, chuyến chưa cất cánh được tính đến thời điểm hiện tại.
+Khi không có can thiệp thời tiết, chỉ số **TỔNG THỜI GIAN CHỜ** cộng thời gian từ **TSAT mới nhất đã được cấp** đến lúc cất cánh thực tế của từng chuyến. Trong lúc phát lại, chuyến chưa cất cánh được tính đến thời điểm hiện tại.
 
 ```text
 Trước TSAT:
@@ -115,7 +115,7 @@ Sau khi cất cánh:
     Thời gian chờ chuyến = ATD − TSAT mới nhất
 ```
 
-Ví dụ: RCD phát lúc **10:00**, TSAT **10:10**, cất cánh lúc **10:20** thì thời gian chờ là **10 phút**. Tàu xuất hiện tại stand ngay khi phát RCD; giai đoạn **10:00–10:10** chưa được cộng vào bộ đếm.
+Ví dụ: RCD phát lúc **09:50**, TSAT **10:10**, cất cánh lúc **10:20** thì thời gian chờ là **10 phút**. Tàu xuất hiện tại stand ngay khi phát RCD; giai đoạn **09:50–10:10** chưa được cộng vào bộ đếm.
 
 Khi cấp **Revised TSAT**, bộ đếm sử dụng mốc mới từ thời điểm cấp và bằng 0 nếu chưa tới TSAT đó. Nếu chỉ cấp **Revised CTOT**, TSAT đang áp dụng được giữ làm mốc. Trạng thái tuân thủ CTOT được kiểm tra riêng với cửa sổ −5/+10 phút.
 
@@ -127,6 +127,18 @@ Khi cấp **Revised TSAT**, bộ đếm sử dụng mốc mới từ thời đi�
 4. Tắt thời tiết xấu để khôi phục khai thác, cấp lại TSAT/CTOT theo trạng thái và tiếp tục điều phối.
 
 Các lần bật/tắt được lưu theo dòng thời gian. Khi tua về quá khứ rồi thay đổi thời tiết, kịch bản sau thời điểm đó được tính lại.
+
+Quy tắc tính chờ khi có thời tiết xấu:
+
+- Tàu đã rời stand: chỉ cộng phần vượt cuối cửa sổ CTOT đang áp dụng trước đợt mưa, `max(0, ATOT − (CTOT + 10 phút))`. Trong lúc phát lại sử dụng thời điểm hiện tại, dừng bộ đếm khi tàu thực sự bay lên. CTOT 13:20, bay lên 13:46 tương ứng 16 phút chờ; trạng thái là **Không tuân thủ CTOT**.
+- Tàu chưa tới TSAT và bị giữ tại stand: không cộng thời gian tạm dừng do thời tiết, không ghi nhận vi phạm CTOT vì slot cũ bị đình hoãn; nhận lại TSAT khi khôi phục.
+- Khoảng khóa chạy đà 25L bắt đầu khi tàu đến ở mốc tiếp cận **6 NM**, kết thúc khi tàu đó vượt ngưỡng **25R thêm 65 m**. Các mốc này không vẽ trên sơ đồ.
+
+Bảng **BẢN TIN THỜI TIẾT** nằm phía trên DCL, giữ thông tin đang áp dụng kể cả khi bảng DCL chuyển sang các điện văn mới.
+
+Công tắc thời tiết nằm trên thanh bản đồ. Khi bật, bản đồ có mưa thưa và ánh chớp nhẹ; nút **Bật âm thanh** cho phép nghe mưa/sấm ở âm lượng thấp. Âm thanh được tổng hợp tại máy bằng Web Audio, không tải tệp bên ngoài, và dừng khi tắt thời tiết. Hiệu ứng hỗ trợ chế độ giảm chuyển động của hệ điều hành.
+
+Giao diện chia sơ đồ và DCL theo tỉ lệ 60/40 trên màn hình rộng, có chế độ tập trung và phóng rộng từng bảng. Phát lại dùng nhịp vẽ màn hình với giới hạn 30 lần cập nhật/giây; thời gian mô phỏng tiến theo thời gian thực đã trôi qua và hệ số phát lại. Khi chuyển sang tab khác, phát lại không nhảy vượt thời gian lúc quay lại.
 
 ## Điện văn DCL
 
@@ -148,6 +160,8 @@ TSAT 1305
 ```
 
 Kịch bản còn có nhánh từ chối/timeout, yêu cầu gửi lại, thông báo `CTOT EXPIRED`, `TSAT REVISED`, `CTOT REVISED` và khôi phục sau thời tiết xấu.
+
+RCD phát đúng **TSAT ban đầu −20 phút**, kể cả khi thời tiết xấu đã xuất hiện; dòng thời gian hỗ trợ RCD trước 00:00 của ngày khai thác. Khi ATC trả FSM chờ thời tiết, kịch bản tạm ngưng nhánh timeout/gửi lại/chuyển thoại cho giao dịch đó. Sau khi khôi phục, ATC gửi CLD với TSAT cấp lại (hoặc CTOT khi tàu đã rời stand), tiếp theo là CDA. Đây là quy tắc chờ thời tiết của mô hình, không mô phỏng lỗi đường truyền datalink.
 
 ## Dữ liệu đầu vào
 

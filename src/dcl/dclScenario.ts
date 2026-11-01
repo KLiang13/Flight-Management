@@ -23,13 +23,13 @@ export function formatDclMessage(message: string): string[] {
     return [header, `${match[4]} ${body}`];
   }
 
-  match = text.match(/^CLD (\d{4}) (\d{6}) ([A-Z]{4}) (PDC \d+) (\S+) CLRD TO (\S+) OFF (\S+) VIA (.+?) SQUAWK (\d+)(?: TSAT (\d{4}))?$/);
+  match = text.match(/^CLD (\d{4}) (\d{6}) ([A-Z]{4}) (PDC \d+) (\S+) CLRD TO (\S+) OFF (\S+) VIA (.+?) SQUAWK (\d+)(?: (TSAT|CTOT)( REVISED)? (\d{4}))?$/);
   if (match) return [
     `CLD ${match[1]} ${match[2]} ${match[3]} ${match[4]}`,
     `${match[5]} CLRD TO ${match[6]} OFF`,
     `${match[7]} VIA ${match[8]}`,
     `SQUAWK ${match[9]}`,
-    ...(match[10] ? [`TSAT ${match[10]}`] : []),
+    ...(match[10] ? [`${match[10]}${match[11] ?? ''} ${match[12]}`] : []),
   ];
 
   match = text.match(/^RCD (\S+)-([A-Z]{4})-STAND (\S+)-([A-Z]{4}) ATIS ([A-Z])-TYP\/(.+?)-RMK\/(.*)$/);

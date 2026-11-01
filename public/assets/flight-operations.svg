@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="220" viewBox="0 0 400 220" fill="none">
+  <g stroke="#7ca8bd" stroke-width="1" opacity=".25">
+    <path d="M24 40H376M24 80H376M24 120H376M24 160H376M24 200H376M60 20V200M120 20V200M180 20V200M240 20V200M300 20V200M360 20V200"/>
+    <circle cx="260" cy="110" r="78"/><circle cx="260" cy="110" r="54"/>
+  </g>
+  <g transform="translate(230 104) rotate(28)">
+    <path d="M0-76C5-76 7-67 7-55V-20L64 16V27L7 7V51L23 66V74L0 66-23 74V66L-7 51V7L-64 27V16L-7-20V-55C-7-67-5-76 0-76Z" fill="#1e4b63" stroke="#94c7da" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M0-56V54M-7-20H7M-7 7H7" stroke="#6eacc4" stroke-width="1"/>
+    <path d="M-31-5V16M31-5V16" stroke="#94c7da" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  <path d="M30 176H150C185 176 200 156 215 144" stroke="#71bed4" stroke-width="1.5" stroke-dasharray="4 6"/>
+  <circle cx="30" cy="176" r="4" fill="#71bed4"/>
+  <path d="M38 184H126M38 190H94" stroke="#628da4" opacity=".6"/>
+  <g stroke="#7ca8bd" opacity=".65"><path d="M26 30V20H36M364 20H374V30M374 190V200H364M36 200H26V190"/></g>
+</svg>

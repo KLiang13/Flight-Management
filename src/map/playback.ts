@@ -1,3 +1,4 @@
+import { distanceAlongPathToPoint } from './surfaceGraph';
 import { surfacePosition } from '../simulation/surfaceTraffic';
 import type { ArrivalTimelineItem } from '../simulation/arrivals';
 import { TAKEOFF_ROLL_MS, type TimelineItem } from '../simulation/runSimulation';
@@ -12,6 +13,21 @@ export function departurePosition(flight: TimelineItem, time: number, queueIndex
   const weather = flight.weather;
   if (weather) {
     if (time < weather.start) return departurePosition(weather.previous, time, queueIndex, runway);
+    if (weather.previous.runwayEntryStart <= weather.start && !weather.returnStand && time < flight.takeoffRollStart) {
+      const entryPath = getRunwaySegment(runway).entryPath;
+      const previousPoint = departurePosition(weather.previous, weather.start, queueIndex, runway).point;
+      const length = entryPath.slice(1).reduce((sum, point, i) => sum + Math.hypot(point.x - entryPath[i].x, point.y - entryPath[i].y), 0);
+      const entryElapsed = (distanceAlongPathToPoint(entryPath, previousPoint, 2) ?? 0) / length * RUNWAY_ENTRY_MS;
+      const resumedElapsed = Math.max(0, time - Math.max(weather.revisionAt ?? Infinity, flight.runwayEntryStart));
+      return { point: pointAlongPath(getRunwaySegment(runway).entryPath, Math.min(1, (entryElapsed + resumedElapsed) / RUNWAY_ENTRY_MS)),
+        phase: 'chờ thời tiết hoặc huấn lệnh trên 25L', rotation: -90 };
+    }
+    if (!weather.heldAtStand && !weather.returnStand && weather.previous.runwayEntryStart > weather.start
+      && time >= weather.previous.runwayEntryStart && time < flight.takeoffRollStart) {
+      return { point: pointAlongPath(getRunwaySegment(runway).entryPath,
+        Math.min(1, (time - weather.previous.runwayEntryStart) / RUNWAY_ENTRY_MS)),
+        phase: 'chờ thời tiết hoặc huấn lệnh trên 25L', rotation: -90 };
+    }
     const missed = weather.missedAt !== null && time >= weather.missedAt;
     if (missed && weather.returnStand) {
       if (weather.returnStart !== null && time < weather.returnStart) return {

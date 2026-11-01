@@ -1,7 +1,7 @@
 import type { TimelineItem } from './runSimulation';
 
 export function clearanceRequestTime(tsat: number, dayStart: number): number {
-  return Math.max(dayStart, tsat - 10 * 60_000);
+  return tsat - 20 * 60_000;
 }
 
 export function tsatWaitMinutes(actualTakeoff: number, tsat: number): number {
@@ -20,6 +20,17 @@ export function departureTsatAt(flight: TimelineItem, time: number): number {
 }
 
 export function departureWaitMinutesAt(flight: TimelineItem, time: number): number {
-  if (flight.weather && time < flight.weather.start) return departureWaitMinutesAt(flight.weather.previous, time);
-  return tsatWaitMinutes(Math.min(time, flight.wheelsOff), departureTsatAt(flight, time));
+  const weather = flight.weather;
+  if (!weather) return tsatWaitMinutes(Math.min(time, flight.wheelsOff), departureTsatAt(flight, time));
+  if (time < weather.start) return departureWaitMinutesAt(weather.previous, time);
+  // A suspension before startup cancels the old slot without a compliance penalty.
+  if (weather.heldAtStand) return 0;
+  let previous = weather.previous;
+  while (previous.weather && previous.weather.start > weather.start) previous = previous.weather.previous;
+  const oldSlot = previous.reissuedCtot ?? (previous.reissuedTsat !== null
+    ? previous.reissuedTsat + previous.taxiMinutes * 60_000 + (previous.wheelsOff - previous.runwayEntryStart)
+    : previous.ctot);
+  const actual = Math.min(time, flight.wheelsOff);
+  return Number.isFinite(actual) && Number.isFinite(oldSlot)
+    ? Math.max(0, (actual - oldSlot - 10 * 60_000) / 60_000) : 0;
 }

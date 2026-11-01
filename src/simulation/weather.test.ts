@@ -43,11 +43,12 @@ describe('manual adverse weather', () => {
     expect(weatherStatus(delayed, 30 * minute)?.missed).toBe(false);
     expect(weatherStatus(delayed, 31 * minute)?.missed).toBe(true);
     expect(delayed.reissuedCtot).toBeNull();
-    expect(departurePosition(delayed, 50 * minute, 0, '25L-25R').phase).toContain('chờ TSAT/CTOT mới');
+    expect(departurePosition(delayed, 50 * minute, 0, '25L-25R').phase).toContain('25L');
   });
 
-  it('returns from the current position without a jump, then issues finite slots on recovery', () => {
-    const base = runSimulation([flight('ONE', 10, 20)]).flights;
+  it('returns from the current position before point X, then issues finite slots on recovery', () => {
+    const original = runSimulation([flight('ONE', 10, 20)]).flights[0];
+    const base = [{ ...original, taxiMinutes: 40, runwayEntryStart: 50 * minute, takeoffRollStart: 50.3 * minute, wheelsOff: 52 * minute }];
     const rain = applyWeatherPeriods(base, [], [{ start: 11 * minute, end: null }], '25L-25R').flights[0];
     const returning = rain.weather!;
     const before = departurePosition(rain, returning.returnStart! - 1, 0, '25L-25R').point;
@@ -69,19 +70,22 @@ describe('manual adverse weather', () => {
     expect(result.flights[0]).toBe(base[0]);
     const waiting = result.flights[1];
     expect(waiting.weather!.heldAtStand).toBe(true);
-    expect(waiting.weather!.returnStand).toBe('73');
+    expect(waiting.weather!.groundStand).toBe('73');
+    expect(waiting.weather!.returnStand).toBeNull();
+    expect(waiting.weather!.missedAt).toBeNull();
     expect(departurePosition(waiting, 65 * minute, 0, '25L-25R').phase).toContain('stand 73');
     expect(waiting.secondTaxiStart).toBeGreaterThanOrEqual(70 * minute);
   });
 
-  it('lets a valid slot depart before an expired aircraft returning from its stand', () => {
+  it('lets an expired aircraft already beyond point X continue before a later startup', () => {
     const base = runSimulation([flight('EXPIRED', 10, 20), flight('VALID', 20, 50)]).flights;
     const result = applyWeatherPeriods(base, [], [{ start: 11 * minute, end: 35 * minute }], '25L-25R');
     const valid = result.flights.find((item) => item.id === 'VALID')!;
     const expired = result.flights.find((item) => item.id === 'EXPIRED')!;
     expect(valid.weather?.missedAt).toBeNull();
     expect(valid.wheelsOff).toBeLessThanOrEqual(60 * minute);
-    expect(valid.wheelsOff).toBeLessThan(expired.wheelsOff);
+    expect(expired.weather!.returnStand).toBeNull();
+    expect(expired.wheelsOff).toBeLessThan(valid.wheelsOff);
   });
 
   it('retains Medium aircraft needed between Heavy departures after rain', () => {
@@ -98,7 +102,7 @@ describe('manual adverse weather', () => {
     const base = runSimulation([flight('ONE', 10, 20)]).flights;
     const first = [{ start: 11 * minute, end: 50 * minute }];
     const initial = applyWeatherPeriods(base, [], first, '25L-25R').flights[0];
-    const repeated = applyWeatherPeriods(base, [], [...first, { start: 51 * minute, end: 80 * minute }], '25L-25R').flights[0];
+    const repeated = applyWeatherPeriods(base, [], [...first, { start: 50.1 * minute, end: 80 * minute }], '25L-25R').flights[0];
     expect(departurePosition(repeated, 35 * minute, 0, '25L-25R')).toEqual(departurePosition(initial, 35 * minute, 0, '25L-25R'));
     expect(repeated.wheelsOff).toBeGreaterThan(initial.wheelsOff);
   });

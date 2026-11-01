@@ -1,0 +1,86 @@
+/* Local fonts keep the interface legible without waiting for a font service. */
+:root {
+  --sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: 'Cascadia Code', Consolas, 'SFMono-Regular', monospace;
+  --feedback-time: 140ms;
+  font-family: var(--sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.control-label, .panel-kicker, .kpi-top, .playback-label {
+  letter-spacing: .045em;
+}
+.control-label { font-size: 10px; color: #586b82; }
+.select-wrap select, .select-wrap input { font-family: var(--sans); font-size: 12px; }
+.button-primary, .button-secondary, .focus-toggle { font-family: var(--sans); font-size: 12px; }
+.project-disclosure > summary, .settings-disclosure > summary { font-size: 13px; }
+.project-hero h1 { font-family: var(--sans); line-height: 1.5; }
+.project-advisor, .project-authors strong, .project-authors strong span { font-size: 12px; }
+.kpi-value small { font-family: var(--sans); }
+.queue-panel tbody td { font-size: 12px; }
+.dcl-raw-message { font-size: 12px; line-height: 1.75; }
+.dcl-board-time, .time-cell, .clock-display, .kpi-value { font-variant-numeric: tabular-nums; }
+
+/* A static aviation illustration belongs to project identity, outside live data. */
+.project-hero { position: relative; isolation: isolate; }
+.project-art { position: absolute; right: 16px; top: 50%; width: 300px; height: 165px; transform: translateY(-50%); pointer-events: none; z-index: -1; }
+@media (min-width: 1100px) {
+  .project-hero-copy { padding-right: 300px; }
+}
+@media (max-width: 1099px) {
+  .project-art { display: none; }
+}
+.brand-mark { background: linear-gradient(145deg, #137c9d, #075985); }
+
+/* Only user-operated controls animate; live map and telegram rows stay untouched. */
+.button-primary, .button-secondary, .focus-toggle, .expand-panel,
+.map-actions .icon-button, .play-button, .speed-control button, .queue-footer button {
+  transition: background-color var(--feedback-time) ease, border-color var(--feedback-time) ease, transform var(--feedback-time) ease;
+}
+.button-primary:hover { transform: none; }
+.button-primary:enabled:active, .button-secondary:enabled:active,
+.focus-toggle:enabled:active, .expand-panel:enabled:active,
+.map-actions .icon-button:enabled:active, .play-button:enabled:active {
+  transform: translateY(1px);
+}
+.project-disclosure > summary svg, .settings-disclosure > summary > svg {
+  transition: rotate 160ms ease;
+}
+.project-disclosure[open] .project-hero, .settings-disclosure[open] .control-panel {
+  animation: disclosure-appear 160ms ease-out;
+}
+.map-weather-switch .weather-toggle i { transition: transform 160ms ease; }
+.map-weather-switch .weather-toggle { transition: background-color 160ms ease; }
+
+@media (hover: hover) {
+  .focus-toggle:hover { background: #24405a; border-color: #6f8a9e; }
+  .queue-footer button:hover { background: #eef5fa; }
+  .play-button:hover > span { background: #d9eef8; }
+}
+@keyframes disclosure-appear {
+  from { opacity: .65; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .button-primary, .button-secondary, .focus-toggle, .expand-panel,
+  .map-actions .icon-button, .play-button, .speed-control button, .queue-footer button,
+  .project-disclosure > summary svg, .settings-disclosure > summary > svg,
+  .map-weather-switch .weather-toggle, .map-weather-switch .weather-toggle i { transition: none; }
+  .project-disclosure[open] .project-hero, .settings-disclosure[open] .control-panel { animation: none; }
+  .button-primary:enabled:active, .button-secondary:enabled:active,
+  .focus-toggle:enabled:active, .expand-panel:enabled:active,
+  .map-actions .icon-button:enabled:active, .play-button:enabled:active { transform: none; }
+}
+
+/* Give the chart more room while keeping DCL telegrams readable. */
+@media (min-width: 951px) {
+  .workspace-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+}
+
+/* Position changes follow the playback clock without a second CSS interpolation. */
+.aircraft-marker { transition: none; }
+.weather-bulletin { transition: background-color 180ms ease, border-color 180ms ease; }
+@media (prefers-reduced-motion: reduce) {
+  .weather-bulletin { transition: none; }
+}
