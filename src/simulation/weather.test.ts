@@ -40,7 +40,7 @@ describe('manual adverse weather', () => {
     const result = applyWeatherPeriods(base, [], [{ start: 11 * minute, end: null }], '25L-25R');
     const delayed = result.flights[0];
     expect(delayed.wheelsOff).toBe(Infinity);
-    expect(weatherStatus(delayed, 30 * minute)?.missed).toBe(true);
+    expect(weatherStatus(delayed, 30 * minute)?.missed).toBe(false);
     expect(weatherStatus(delayed, 31 * minute)?.missed).toBe(true);
     expect(delayed.reissuedCtot).toBeNull();
     expect(delayed.weather!.returnStart).toBe(11 * minute);
@@ -89,7 +89,7 @@ describe('manual adverse weather', () => {
     expect(valid.weather?.missedAt).toBeNull();
     expect(valid.wheelsOff).toBeLessThanOrEqual(60 * minute);
     expect(expired.weather!.returnStand).toBeNull();
-    expect(valid.wheelsOff).toBeLessThan(expired.wheelsOff);
+    expect(expired.wheelsOff).toBeLessThan(valid.wheelsOff);
   });
 
   it('retains Medium aircraft needed between Heavy departures after rain', () => {

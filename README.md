@@ -123,7 +123,8 @@ Các tuyến quay về, lăn lại và giao cắt sau mưa được kiểm tra b
 Quy tắc tính chờ khi có thời tiết xấu:
 
 - Tàu đã rời stand: chỉ cộng phần vượt cuối cửa sổ CTOT đang áp dụng trước đợt mưa, `max(0, ATOT − (CTOT + 10 phút))`. Trong lúc phát lại sử dụng thời điểm hiện tại, dừng bộ đếm khi tàu thực sự bay lên. CTOT 13:20, bay lên 13:46 tương ứng 16 phút chờ; trạng thái là **Không tuân thủ CTOT**.
-- Tàu chưa tới TSAT và bị giữ tại stand: không cộng thời gian tạm dừng do thời tiết, không ghi nhận vi phạm CTOT vì slot cũ bị đình hoãn; nhận lại TSAT khi khôi phục.
+- Tàu chưa tới TSAT và bị giữ tại stand: không cộng thời gian tạm dừng do thời tiết; vẫn ghi **Không tuân thủ CTOT** khi vượt CTOT gốc +10 phút, dù chưa khởi động hoặc đã nhận giờ mới. Việc đổi nhãn không phát sinh thêm thao tác quay về hay cấp giờ mới.
+- Trong thời tiết xấu, mọi tàu chưa cất cánh được đánh giá theo CTOT gốc +10 phút. Tàu đã qua ba đèn tiếp tục đến S1/25L và được ưu tiên khởi hành khi hết mưa, sau khi bảo đảm phân cách đường băng và ràng buộc H/M. Tàu chưa qua ba đèn vẫn thực hiện quy tắc quay về do mưa.
 - Khoảng khóa chạy đà 25L bắt đầu khi tàu đến ở mốc tiếp cận **6 NM**, kết thúc khi tàu đó vượt ngưỡng **25R thêm 65 m**. Các mốc này không vẽ trên sơ đồ.
 
 Bảng **BẢN TIN THỜI TIẾT** nằm phía trên DCL, giữ thông tin đang áp dụng kể cả khi bảng DCL chuyển sang các điện văn mới.

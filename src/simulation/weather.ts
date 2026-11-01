@@ -182,7 +182,8 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
     while (pending.length) {
       const expired = (flight: TimelineItem) => Boolean(currentState(flight)?.returnedAfterStartup || currentState(flight)?.returnStand)
         || (currentState(flight)?.missedAt ?? Infinity) <= Math.max(release, available, earliest(flight));
-      pending.sort((a, b) => Number(expired(a)) - Number(expired(b))
+      pending.sort((a, b) => Number(Boolean(currentState(b)?.passedWeatherPoint)) - Number(Boolean(currentState(a)?.passedWeatherPoint))
+        || Number(expired(a)) - Number(expired(b))
         || earliest(a) - earliest(b) || a.order - b.order);
       let index = 0;
       const heavyCount = pending.filter((flight) => flight.wakeCategory === 'H').length;
@@ -348,7 +349,8 @@ function reserveWeatherPlan(flights: TimelineItem[], arrivals: ArrivalTimelineIt
     const committed = flights.filter(flight => flight.takeoffRollStart < period.start);
     const pending = flights.filter(flight => flight.takeoffRollStart >= period.start).map(flight => ids.has(flight.id) ? { ...flight, missedCtot: true,
       weather: { ...flight.weather!, missedAt: Math.max(period.start, departureCtotAt(flight.weather!.previous, period.start) + 10 * MINUTE + 1) } } : flight);
-    pending.sort((a, b) => Number(Boolean(a.weather?.returnedAfterStartup || a.weather?.missedAt !== null && a.weather?.missedAt !== undefined))
+    pending.sort((a, b) => Number(Boolean(b.weather?.passedWeatherPoint)) - Number(Boolean(a.weather?.passedWeatherPoint))
+      || Number(Boolean(a.weather?.returnedAfterStartup || a.weather?.missedAt !== null && a.weather?.missedAt !== undefined))
       - Number(Boolean(b.weather?.returnedAfterStartup || b.weather?.missedAt !== null && b.weather?.missedAt !== undefined)) || a.order - b.order);
     const ordered: TimelineItem[] = [...committed];
     while (pending.length) {
@@ -412,7 +414,8 @@ export function hasMissedCtotAt(flight: TimelineItem, time: number): boolean {
   if (!weather) return flight.missedCtot && time >= flight.ctot + 10 * MINUTE
     || flight.returnStart !== null && time >= flight.returnStart;
   if (time < weather.start) return hasMissedCtotAt(weather.previous, time);
-  return (weather.missedAt !== null && time >= weather.missedAt) || hasMissedCtotAt(weather.previous, weather.start);
+  return Math.min(time, flight.wheelsOff) > flight.ctot + 10 * MINUTE
+    || hasMissedCtotAt(weather.previous, weather.start);
 }
 
 export function hasReissuedSlotAt(flight: TimelineItem, time: number): boolean {
@@ -427,12 +430,12 @@ export function weatherStatus(flight: TimelineItem, time: number): { label: stri
   const weather = flight.weather;
   if (!weather) return null;
   if (time < weather.start) return weatherStatus(weather.previous, time);
-  const missed = Boolean(weather.returnedAfterStartup) || weather.missedAt !== null && time >= weather.missedAt;
+  const missed = hasMissedCtotAt(flight, time);
   const pending = weather.revisionAt === null || time < weather.revisionAt;
   return {
-    label: pending
+    label: missed ? 'Không tuân thủ CTOT' : pending
       ? 'Chờ thời tiết tốt'
-      : missed ? 'Không tuân thủ CTOT' : flight.reissuedTsat !== null ? 'Đã cấp TSAT mới' : flight.reissuedCtot !== null ? 'Đã cấp CTOT mới' : 'Chờ khởi hành',
+      : flight.reissuedTsat !== null ? 'Đã cấp TSAT mới' : flight.reissuedCtot !== null ? 'Đã cấp CTOT mới' : 'Chờ khởi hành',
     missed, pending, tsat: pending && weather.heldAtStand ? null : departureTsatAt(flight, time),
   };
 }

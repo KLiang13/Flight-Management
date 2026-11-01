@@ -54,7 +54,7 @@ describe('weather suspension rules', () => {
     expect(recovered.reissuedTsat).toBeGreaterThanOrEqual(825 * minute);
     expect(departureWaitMinutesAt(recovered, 824 * minute)).toBe(0);
     expect(departureWaitMinutesAt(recovered, recovered.wheelsOff)).toBe(0);
-    expect(hasMissedCtotAt(recovered, recovered.wheelsOff)).toBe(false);
+    expect(hasMissedCtotAt(recovered, recovered.wheelsOff)).toBe(true);
   });
 
   it('keeps RCD at old TSAT-20 during rain, FSM standby, then CLD/CDA on recovery', () => {
@@ -123,7 +123,7 @@ describe('started aircraft CTOT status', () => {
     const recovered = applyWeatherPeriods([planned], [], [{ start: planned.runwayEntryStart - 1, end: 825 * minute }], '25L-25R').flights[0];
     expect(weatherStatus(recovered, 809 * minute)?.label).toBe('Chờ thời tiết tốt');
     expect(weatherStatus(recovered, 810 * minute)?.label).not.toBe('CTOT EXPIRED');
-    expect(weatherStatus(recovered, 810 * minute + 1)?.label).toBe('Chờ thời tiết tốt');
+    expect(weatherStatus(recovered, 810 * minute + 1)?.label).toBe('Không tuân thủ CTOT');
     expect(weatherStatus(recovered, 824 * minute)?.tsat).toBe(planned.tsat);
     expect(weatherStatus(recovered, 825 * minute)?.label).toBe('Không tuân thủ CTOT');
     expect(departureStatusAt(recovered, recovered.takeoffRollStart - 1, '25L-25R')).toBe('Không tuân thủ CTOT');
@@ -135,9 +135,9 @@ describe('started aircraft CTOT status', () => {
   it('does not label an unstarted aircraft CTOT EXPIRED during startup suspension', () => {
     const planned = base(797, 807);
     const held = applyWeatherPeriods([planned], [], [{ start: 787 * minute, end: 850 * minute }], '25L-25R').flights[0];
-    expect(weatherStatus(held, 840 * minute)?.label).toBe('Chờ thời tiết tốt');
+    expect(weatherStatus(held, 840 * minute)?.label).toBe('Không tuân thủ CTOT');
     expect(weatherStatus(held, 840 * minute)?.tsat).toBeNull();
-    expect(weatherStatus(held, 850 * minute)?.label).toBe('Đã cấp TSAT mới');
+    expect(weatherStatus(held, 850 * minute)?.label).toBe('Không tuân thủ CTOT');
   });
 });
 
