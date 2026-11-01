@@ -166,18 +166,15 @@ Thanh phát lại có nút **Lùi 30 giây**, thanh tua và các tốc độ ph�
 
 ## Dữ liệu đầu vào
 
-### Bốn workbook tích hợp
+### Ba workbook tích hợp
 
 | Bộ dữ liệu | Tệp | Phạm vi |
 | --- | --- | --- |
-| **Cập nhật 21.10.2026 — mặc định** | [`21102026.xlsx`](public/samples/21102026.xlsx) | Khai thác **01.10.2026**; **70 DEP + 30 ARR** |
-| Chuyên đề — tàu đi và đến | [`chuyen-de.xlsx`](public/samples/chuyen-de.xlsx) | Khai thác **01.10.2026**; **70 DEP + 30 ARR** |
+| **Chuyên đề — tàu đi và đến — mặc định** | [`chuyen-de.xlsx`](public/samples/chuyen-de.xlsx) | Khai thác **01.10.2026**; **70 DEP + 30 ARR** |
 | Bộ dữ liệu 7 ngày | [`7-days.xls`](public/samples/7-days.xls) | **01–07.11.2023** |
 | Bộ dữ liệu 3 ngày | [`3-days.xls`](public/samples/3-days.xls) | **03–05.11.2023** |
 
-Trong `21102026.xlsx`, trường `Compliance` đánh dấu **25 chuyến “Không tuân thủ”** để tạo tình huống bắt buộc vượt hạn CTOT. Đây là dữ liệu điều khiển kịch bản, không chỉ là nhãn hiển thị. Các chuyến còn lại vẫn chịu tác động của mật độ khai thác, thời tiết và ràng buộc chung.
-
-Tên tệp cập nhật không thay thế ngày khai thác: ứng dụng đọc ngày từ dữ liệu bên trong workbook.
+Ứng dụng đọc ngày khai thác từ dữ liệu bên trong workbook. Bộ cập nhật 21.10.2026 đã được gỡ khỏi ứng dụng; bản lưu trong `tests/fixtures` chỉ phục vụ kiểm thử hồi quy, không được đưa lên website.
 
 ### Định dạng và trường dữ liệu
 

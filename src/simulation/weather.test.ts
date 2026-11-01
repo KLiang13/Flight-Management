@@ -151,7 +151,7 @@ describe('manual adverse weather', () => {
 
 describe('weather recovery with bundled workbooks', () => {
   it.each(['21102026.xlsx', 'chuyen-de.xlsx', '3-days.xls', '7-days.xls'])('recovers every departure in %s with valid slots and runway separation', async (filename) => {
-    const bytes = readFileSync(`public/samples/${filename}`);
+    const bytes = readFileSync(filename === '21102026.xlsx' ? 'tests/fixtures/21102026.xlsx' : `public/samples/${filename}`);
     const file = new File([bytes], filename);
     Object.defineProperty(file, 'arrayBuffer', { value: async () => Uint8Array.from(bytes).buffer });
     const workbook = await readFlightFile(file);

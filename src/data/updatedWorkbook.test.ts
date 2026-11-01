@@ -6,7 +6,7 @@ import { runSimulation, toScheduledFlights } from '../simulation/runSimulation';
 import { scheduleArrivals } from '../simulation/arrivals';
 
 async function updatedWorkbook() {
-  const bytes = readFileSync('public/samples/21102026.xlsx');
+  const bytes = readFileSync('tests/fixtures/21102026.xlsx');
   const file = new File([bytes], '21102026.xlsx');
   Object.defineProperty(file, 'arrayBuffer', { value: async () => Uint8Array.from(bytes).buffer });
   return readFlightFile(file);

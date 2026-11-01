@@ -20,7 +20,6 @@ import { applyWeatherPeriods, composeWeatherDclEvents, weatherStatus, departureS
 
 type FilePickerWindow = Window & { showOpenFilePicker?: (options?: unknown) => Promise<FileSystemFileHandle[]> };
 const SAMPLE_FILES = [
-  { id: 'updated', label: 'Cập nhật 21.10.2026 · tàu đi và đến', dates: 'Khai thác 01.10.2026', filename: '21102026.xlsx', url: '/samples/21102026.xlsx' },
   { id: 'cd', label: 'Chuyên đề · tàu đi và đến', dates: '01.10.2026', filename: 'Chuyên đề.xlsx', url: '/samples/chuyen-de.xlsx' },
   { id: '7d', label: 'Bộ dữ liệu 7 ngày', dates: '01–07.11.2023', filename: 'Số liệu 7 ngày từ  01.11.23  đến 07.11.23.xls', url: '/samples/7-days.xls' },
   { id: '3d', label: 'Bộ dữ liệu 3 ngày', dates: '03–05.11.2023', filename: 'Số liệu 3 ngày từ  03.11.23  đến 05.11.23.xls', url: '/samples/3-days.xls' },

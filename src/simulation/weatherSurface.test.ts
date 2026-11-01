@@ -44,7 +44,7 @@ describe('weather route reservations', () => {
     expect(flight.wheelsOff).toBe(Infinity);
   });
   it('recovers the calibrated mixed workbook after a mid-day shower', async () => {
-    const bytes = readFileSync('public/samples/21102026.xlsx');
+    const bytes = readFileSync('tests/fixtures/21102026.xlsx');
     const file = new File([bytes], '21102026.xlsx');
     Object.defineProperty(file, 'arrayBuffer', { value: async () => Uint8Array.from(bytes).buffer });
     const workbook = await readFlightFile(file);
