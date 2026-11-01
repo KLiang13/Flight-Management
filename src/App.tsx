@@ -16,7 +16,7 @@ import { arrivalPosition, departurePosition, TAKEOFF_VISIBLE_AFTER_MS } from './
 import { planSurfaceTraffic } from './simulation/surfaceTraffic';
 import { scheduleArrivals, type ArrivalTimelineItem } from './simulation/arrivals';
 import { clearanceRequestTime, departureCtotAt, departureTsatAt, departureWaitMinutesAt } from './simulation/departureTiming';
-import { applyWeatherPeriods, composeWeatherDclEvents, weatherStatus, departureAtTime, hasMissedCtotAt, hasReissuedSlotAt, type WeatherPeriod } from './simulation/weather';
+import { applyWeatherPeriods, composeWeatherDclEvents, weatherStatus, departureStatusAt, departureAtTime, hasMissedCtotAt, hasReissuedSlotAt, type WeatherPeriod } from './simulation/weather';
 
 type FilePickerWindow = Window & { showOpenFilePicker?: (options?: unknown) => Promise<FileSystemFileHandle[]> };
 const SAMPLE_FILES = [
@@ -480,14 +480,7 @@ function App() {
               const missed = hasMissedCtotAt(flight, timeCursor);
               const revisedSlot = flight.reissuedTsat ?? flight.reissuedCtot;
               const tsat = weather?.pending && flight.weather?.heldAtStand ? null : departureTsatAt(flight, timeCursor);
-              const phase = departurePosition(flight, timeCursor, 0, runway).phase;
-              const status = weather?.label ?? (missed ? 'Không tuân thủ CTOT'
-                : phase.startsWith('đã cất cánh') ? 'Đã cất cánh'
-                  : phase.includes('cất cánh') ? 'Chạy đà cất cánh'
-                    : phase.includes('đường băng') ? 'Vào đường băng'
-                      : phase.includes('điểm chờ') || phase.includes('đang lăn') || phase.startsWith('lăn') ? 'Đang lăn'
-                        : phase.includes('chờ tại S1') ? 'Chờ tại điểm giữ S1'
-                          : 'Chờ khởi hành');
+              const status = departureStatusAt(flight, timeCursor, runway);
               return <tr key={flight.id} className={selectedFlight === flight.callsign ? 'selected-row' : ''} onClick={() => setSelectedFlight(flight.callsign)}>
                 <td className="order-cell">{flight.order.toString().padStart(2, '0')}</td>
                 <td><div className="flight-call">{flight.callsign}</div><div className="flight-type">{flight.aircraftType}</div></td>

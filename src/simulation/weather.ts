@@ -318,9 +318,22 @@ export function weatherStatus(flight: TimelineItem, time: number): { label: stri
   return {
     label: pending
       ? missed && !weather.heldAtStand ? 'CTOT EXPIRED' : 'Chờ thời tiết tốt'
-      : weather.heldAtStand ? 'Đã cấp TSAT mới' : 'Đã cấp CTOT mới',
+      : missed ? 'Không tuân thủ CTOT' : weather.heldAtStand ? 'Đã cấp TSAT mới' : 'Đã cấp CTOT mới',
     missed, pending, tsat: pending && weather.heldAtStand ? null : departureTsatAt(flight, time),
   };
+}
+
+export function departureStatusAt(flight: TimelineItem, time: number, runway: string): string {
+  if (time >= flight.wheelsOff) return 'Cất cánh';
+  if (time >= flight.takeoffRollStart) return 'Chạy đà';
+  const weather = weatherStatus(flight, time);
+  if (weather) return weather.label;
+  if (hasMissedCtotAt(flight, time)) return 'Không tuân thủ CTOT';
+  const phase = departurePosition(flight, time, 0, runway).phase;
+  if (phase.includes('đường băng')) return 'Vào đường băng';
+  if (phase.includes('điểm chờ') || phase.includes('đang lăn') || phase.startsWith('lăn')) return 'Đang lăn';
+  if (phase.includes('chờ tại S1')) return 'Chờ tại điểm giữ S1';
+  return 'Chờ khởi hành';
 }
 
 function messageStamp(time: number): string {

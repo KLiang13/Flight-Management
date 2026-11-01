@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { runSimulation } from './runSimulation';
-import { applyWeatherPeriods, hasMissedCtotAt, weatherDclEvents, composeWeatherDclEvents, weatherStatus } from './weather';
+import { applyWeatherPeriods, hasMissedCtotAt, weatherDclEvents, composeWeatherDclEvents, weatherStatus, departureStatusAt } from './weather';
 import { clearanceRequestTime, departureWaitMinutesAt } from './departureTiming';
 import { departurePosition } from '../map/playback';
 import { formatDclMessage, createDclEvents } from '../dcl/dclScenario';
@@ -103,7 +103,11 @@ describe('started aircraft CTOT status', () => {
     expect(weatherStatus(recovered, 810 * minute)?.label).not.toBe('CTOT EXPIRED');
     expect(weatherStatus(recovered, 810 * minute + 1)?.label).toBe('CTOT EXPIRED');
     expect(weatherStatus(recovered, 824 * minute)?.tsat).toBe(planned.tsat);
-    expect(weatherStatus(recovered, 825 * minute)?.label).toBe('Đã cấp CTOT mới');
+    expect(weatherStatus(recovered, 825 * minute)?.label).toBe('Không tuân thủ CTOT');
+    expect(departureStatusAt(recovered, recovered.takeoffRollStart - 1, '25L-25R')).toBe('Không tuân thủ CTOT');
+    expect(departureStatusAt(recovered, recovered.takeoffRollStart, '25L-25R')).toBe('Chạy đà');
+    expect(departureStatusAt(recovered, recovered.wheelsOff - 1, '25L-25R')).toBe('Chạy đà');
+    expect(departureStatusAt(recovered, recovered.wheelsOff, '25L-25R')).toBe('Cất cánh');
     expect(recovered.reissuedTsat).toBeNull();
   });
   it('does not label an unstarted aircraft CTOT EXPIRED during startup suspension', () => {
