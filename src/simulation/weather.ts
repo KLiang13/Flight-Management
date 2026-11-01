@@ -4,7 +4,7 @@ import type { ArrivalTimelineItem } from './arrivals';
 import { departurePosition } from '../map/playback';
 import { getNearestReturnStand, getStandPoint, getTaxiRoutePoints, type MapPoint } from '../map/airfieldGeometry';
 import type { DclEvent } from '../dcl/dclScenario';
-import { departureTsatAt, departureWaitMinutesAt } from './departureTiming';
+import { departureCtotAt, departureTsatAt, departureWaitMinutesAt } from './departureTiming';
 import { releaseTakeoffRoll, arrivalDelayForBookedRolls, reserveCrossingsBeforeDeparture } from './runwayCoordination';
 import { CTOT_COMMIT_POINT, weatherReturnVia1A } from '../map/surfaceGraph';
 
@@ -13,7 +13,7 @@ const MOVEMENT = RUNWAY_MOVEMENT_MS;
 export type WeatherPeriod = { start: number; end: number | null };
 export type WeatherDepartureState = WeatherPeriod & {
   previous: TimelineItem; heldAtStand: boolean; groundStand: string;
-  atStand?: boolean; passedWeatherPoint?: boolean; outboundRoute?: MapPoint[];
+  atStand?: boolean; passedWeatherPoint?: boolean; outboundRoute?: MapPoint[]; assignedCtot?: number;
   missedAt: number | null; returnStart: number | null; returnEnd: number | null;
   returnStand: string | null; returnPath: MapPoint[];
   resumedTaxiStart: number; groundReadyAt: number; revisionAt: number | null;
@@ -45,13 +45,7 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
     stand: arrival.stand, from: arrival.standArrival, until: Infinity, id: arrival.id,
   });
   const currentState = (flight: TimelineItem) => flight.weather?.start === period.start ? flight.weather : undefined;
-  const activeSlot = (flight: TimelineItem) => {
-    const assigned = flight.weather?.revisionAt ?? flight.returnEnd ?? Infinity;
-    if (assigned > period.start) return flight.ctot;
-    if (flight.reissuedCtot !== null) return flight.reissuedCtot;
-    if (flight.reissuedTsat !== null) return flight.reissuedTsat + flight.taxiMinutes * MINUTE + MOVEMENT;
-    return flight.ctot;
-  };
+  const activeSlot = (flight: TimelineItem) => departureCtotAt(flight, period.start);
   function stateFor(previous: TimelineItem): WeatherDepartureState {
     const old = previous.weather;
     const waitingAfterReturn = previous.returnEnd !== null && previous.returnEnd <= period.start
@@ -110,12 +104,15 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
     const previous = state.previous;
     const issued = state.revisionAt !== null && Number.isFinite(wheelsOff);
     const revisedAtStand = state.heldAtStand;
-    const result = { ...previous, weather: state, wheelsOff, runwayEntryStart: wheelsOff - MOVEMENT, takeoffRollStart: wheelsOff - TAKEOFF_ROLL_MS,
+    const oldSlot = activeSlot(previous);
+    const keepSlot = wheelsOff >= oldSlot - 5 * MINUTE && wheelsOff <= oldSlot + 10 * MINUTE;
+    const assignedCtot = issued ? keepSlot ? oldSlot : wheelsOff : undefined;
+    const result = { ...previous, weather: { ...state, assignedCtot }, wheelsOff, runwayEntryStart: wheelsOff - MOVEMENT, takeoffRollStart: wheelsOff - TAKEOFF_ROLL_MS,
       missedCtot: previous.missedCtot || state.missedAt !== null,
       returnStart: state.returnStart, returnEnd: state.returnEnd, returnStand: state.returnStand,
       secondTaxiStart: state.resumedTaxiStart,
-      reissuedCtot: issued && !revisedAtStand ? wheelsOff : null,
-      reissuedTsat: issued && revisedAtStand ? state.resumedTaxiStart : null,
+      reissuedCtot: issued && !revisedAtStand && !keepSlot ? wheelsOff : null,
+      reissuedTsat: issued && revisedAtStand && state.resumedTaxiStart !== departureTsatAt(previous, period.start) ? state.resumedTaxiStart : null,
       waitMinutes: 0,
       status: issued ? 'Đã cấp TSAT/CTOT mới' : 'Chờ thời tiết tốt' };
     result.waitMinutes = departureWaitMinutesAt(result, wheelsOff);
@@ -290,7 +287,7 @@ export function hasReissuedSlotAt(flight: TimelineItem, time: number): boolean {
   if (!weather) return (flight.reissuedCtot !== null || flight.reissuedTsat !== null)
     && (flight.returnEnd === null || time >= flight.returnEnd);
   if (time < weather.start) return hasReissuedSlotAt(weather.previous, time);
-  return (weather.revisionAt !== null && time >= weather.revisionAt) || hasReissuedSlotAt(weather.previous, weather.start);
+  return (weather.revisionAt !== null && time >= weather.revisionAt && (flight.reissuedTsat !== null || flight.reissuedCtot !== null)) || hasReissuedSlotAt(weather.previous, weather.start);
 }
 
 export function weatherStatus(flight: TimelineItem, time: number): { label: string; missed: boolean; pending: boolean; tsat: number | null } | null {
@@ -302,7 +299,7 @@ export function weatherStatus(flight: TimelineItem, time: number): { label: stri
   return {
     label: pending
       ? missed && !weather.heldAtStand ? 'CTOT EXPIRED' : 'Chờ thời tiết tốt'
-      : missed ? 'Không tuân thủ CTOT' : weather.heldAtStand ? 'Đã cấp TSAT mới' : 'Đã cấp CTOT mới',
+      : missed ? 'Không tuân thủ CTOT' : flight.reissuedTsat !== null ? 'Đã cấp TSAT mới' : flight.reissuedCtot !== null ? 'Đã cấp CTOT mới' : 'Chờ khởi hành',
     missed, pending, tsat: pending && weather.heldAtStand ? null : departureTsatAt(flight, time),
   };
 }
@@ -362,15 +359,16 @@ export function weatherDclEvents(flights: TimelineItem[], periods: WeatherPeriod
       if (revisionAt === null || !Number.isFinite(current.wheelsOff)) continue;
       const clearanceAt = Math.max(revisionAt, requestedAt + 15_000);
       if (periods.some(later => later.start > period.start && clearanceAt >= later.start && clearanceAt < (later.end ?? Infinity))) continue;
-      const startup = current.reissuedTsat ?? original.tsat;
-      const slot = current.reissuedCtot ?? current.wheelsOff;
-      const revised = state && !state.heldAtStand ? 'CTOT' : 'TSAT';
+      const startup = departureTsatAt(current, clearanceAt);
+      const slot = departureCtotAt(current, clearanceAt);
+      const revised = state?.heldAtStand && current.reissuedTsat !== null ? 'TSAT' : 'CTOT';
+      const revisionLabel = state && (revised === 'TSAT' ? current.reissuedTsat !== null : current.reissuedCtot !== null) ? ' REVISED' : '';
       const value = revised === 'TSAT' ? startup : slot;
       const stamp = new Date(value).toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit' }).replace(':', '');
       events.push({
         id: `${flight.id}-weather-${period.start}-cld`, flightId: flight.id, time: clearanceAt,
         callsign: flight.callsign, direction: 'Hệ thống → Tổ lái',
-        message: `CLD ${messageStamp(clearanceAt)} VVTS PDC 001 ${flight.callsign} CLRD TO ${String(flight.row.AirportReceiptCode ?? 'VVDN')} OFF 25L VIA SID DEMO1 SQUAWK 2201 ${revised} REVISED ${stamp}`, status: 'OK',
+        message: `CLD ${messageStamp(clearanceAt)} VVTS PDC 001 ${flight.callsign} CLRD TO ${String(flight.row.AirportReceiptCode ?? 'VVDN')} OFF 25L VIA SID DEMO1 SQUAWK 2201 ${revised}${revisionLabel} ${stamp}`, status: 'OK',
       }, {
         id: `${flight.id}-weather-${period.start}-cda`, flightId: flight.id, time: clearanceAt + 25_000,
         callsign: flight.callsign, direction: 'Tổ lái → Hệ thống',

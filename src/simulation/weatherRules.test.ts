@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { runSimulation } from './runSimulation';
 import { applyWeatherPeriods, hasMissedCtotAt, weatherDclEvents, composeWeatherDclEvents, weatherStatus, departureStatusAt, departureStandAt } from './weather';
-import { clearanceRequestTime, departureWaitMinutesAt } from './departureTiming';
+import { clearanceRequestTime, departureCtotAt, departureTsatAt, departureWaitMinutesAt } from './departureTiming';
 import { departurePosition } from '../map/playback';
 import { formatDclMessage, createDclEvents } from '../dcl/dclScenario';
 
@@ -185,5 +185,37 @@ describe('rain decision at the S1 lamp', () => {
     expect(flight.takeoffRollStart).toBeGreaterThanOrEqual(825 * minute);
     expect(departurePosition(flight, 820 * minute, 0, '25L-25R').phase).toBe('chờ lượt vào 25L');
     expect(departurePosition(flight, flight.wheelsOff + 1, 0, '25L-25R').phase).toBe('đã cất cánh 25L');
+  });
+});
+
+describe('retain a still-valid CTOT after rain', () => {
+  it('revises only startup for an unstarted aircraft and keeps its CTOT', () => {
+    const planned = base(790, 810);
+    const recovered = applyWeatherPeriods([planned], [], [{ start: 785 * minute, end: 792 * minute }], '25L-25R').flights[0];
+    expect(recovered.reissuedTsat).toBe(792 * minute);
+    expect(recovered.reissuedCtot).toBeNull();
+    expect(departureCtotAt(recovered, 792 * minute)).toBe(planned.ctot);
+    expect(recovered.wheelsOff).toBeLessThanOrEqual(planned.ctot + 10 * minute);
+    const messages = weatherDclEvents([recovered], [{ start: 785 * minute, end: 792 * minute }]);
+    expect(messages.some(event => event.message.includes('TSAT REVISED'))).toBe(true);
+    expect(messages.some(event => event.message.includes('CTOT REVISED'))).toBe(false);
+  });
+  it('keeps both clocks for a started aircraft when the original window remains feasible', () => {
+    const planned = base(790, 810);
+    const periods = [{ start: planned.taxiStart + planned.taxiMinutes * minute - 1, end: 806 * minute }];
+    const recovered = applyWeatherPeriods([planned], [], periods, '25L-25R').flights[0];
+    expect(recovered.weather!.heldAtStand).toBe(false);
+    expect(recovered.reissuedTsat).toBeNull();
+    expect(recovered.reissuedCtot).toBeNull();
+    expect(departureCtotAt(recovered, 806 * minute)).toBe(planned.ctot);
+    expect(departureTsatAt(recovered, 806 * minute)).toBe(planned.tsat);
+    expect(weatherDclEvents([recovered], periods).some(event => event.message.includes('REVISED'))).toBe(false);
+  });
+  it('reissues CTOT when rain ends before expiry but runway movement cannot fit the remaining time', () => {
+    const planned = base(790, 810);
+    const recovered = applyWeatherPeriods([planned], [], [{ start: planned.runwayEntryStart - 1, end: 819.9 * minute }], '25L-25R').flights[0];
+    expect(recovered.wheelsOff).toBeGreaterThan(planned.ctot + 10 * minute);
+    expect(recovered.reissuedCtot).toBe(recovered.wheelsOff);
+    expect(recovered.reissuedTsat).toBeNull();
   });
 });

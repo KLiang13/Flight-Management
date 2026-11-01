@@ -45,7 +45,7 @@ describe('RCD appearance and TSAT waiting time', () => {
   it('keeps the latest TSAT when a subsequent weather period revises only CTOT', () => {
     const first = applyWeatherPeriods([flight()], [], [{ start: 55 * minute, end: 100 * minute }], '25L-25R').flights[0];
     const start = first.reissuedTsat! + minute;
-    const second = applyWeatherPeriods([first], [], [{ start, end: start + 9 * minute }], '25L-25R').flights[0];
+    const second = applyWeatherPeriods([first], [], [{ start, end: start + 30 * minute }], '25L-25R').flights[0];
     expect(second.reissuedTsat).toBeNull();
     expect(second.reissuedCtot).not.toBeNull();
     expect(departureTsatAt(second, second.wheelsOff)).toBe(first.reissuedTsat);

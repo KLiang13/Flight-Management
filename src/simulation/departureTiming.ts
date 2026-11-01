@@ -23,7 +23,8 @@ export function departureTsatAt(flight: TimelineItem, time: number): number {
 /** Return only a CTOT already issued at the replay cursor, never a future revision. */
 export function departureCtotAt(flight: TimelineItem, time: number): number {
   if (flight.weather) {
-    const { revisionAt, previous } = flight.weather;
+    const { revisionAt, previous, assignedCtot } = flight.weather;
+    if (revisionAt !== null && time >= revisionAt && assignedCtot !== undefined) return assignedCtot;
     if (revisionAt !== null && time >= revisionAt && Number.isFinite(flight.wheelsOff)
       && (flight.reissuedCtot !== null || flight.reissuedTsat !== null)) {
       return flight.reissuedCtot ?? flight.wheelsOff;
@@ -66,11 +67,7 @@ export function departureWaitMinutesAt(flight: TimelineItem, time: number): numb
   if (time < weather.start) return departureWaitMinutesAt(weather.previous, time);
   // A suspension before startup cancels the old slot without a compliance penalty.
   if (weather.heldAtStand) return 0;
-  let previous = weather.previous;
-  while (previous.weather && previous.weather.start > weather.start) previous = previous.weather.previous;
-  const oldSlot = previous.reissuedCtot ?? (previous.reissuedTsat !== null
-    ? previous.reissuedTsat + previous.taxiMinutes * 60_000 + (previous.wheelsOff - previous.runwayEntryStart)
-    : previous.ctot);
+  const oldSlot = departureCtotAt(weather.previous, weather.start);
   const actual = Math.min(time, flight.wheelsOff);
   return Number.isFinite(actual) && Number.isFinite(oldSlot)
     ? Math.max(0, (actual - oldSlot - 10 * 60_000) / 60_000) : 0;

@@ -110,6 +110,8 @@ Khi cấp **Revised TSAT**, bộ đếm sử dụng mốc mới từ thời đi�
 
 ### Thời tiết xấu thủ công
 
+Sau khi hết mưa, giữ CTOT đang áp dụng nếu thời điểm cất cánh dự kiến vẫn nằm trong cửa sổ −5/+10 phút. Tàu chưa nổ máy có thể nhận TSAT mới mà không đổi CTOT; tàu đã nổ máy giữ TSAT cũ. Chỉ cấp CTOT mới khi lịch di chuyển và chạy đà không còn đáp ứng cửa sổ cũ, kể cả khi mưa kết thúc trước CTOT +10 phút.
+
 1. Chạy lịch và phát lại đến thời điểm muốn tạo tình huống.
 2. Bật **Thời tiết xấu** để dừng cấp phép cất/hạ cánh mới. Tàu đến còn trên không và tiếp cận trong khoảng ngừng tiếp nhận được chuyển hướng sang sân bay khác, không quay lại trong ngày mô phỏng. Tàu đã chạm bánh tiếp tục thoát đường băng và về stand; các lượt tiếp cận bắt đầu sau khi thời tiết tốt có thể được tiếp nhận bình thường.
 3. Ngay khi bắt đầu mưa, tàu đang lăn nhưng chưa vượt điểm đèn trên TWY S gần S1 sẽ theo nhánh cong cạnh 1A xuống TWY V để về stand trống gần nhất. Quyết định dựa trên vị trí tại lúc bắt đầu mưa, không chờ CTOT hết hạn. Tàu đã vượt đèn tiếp tục đến S1, chờ hết mưa và lượt vào 25L mới. Tàu chưa rời stand giữ nguyên vị trí đỗ. Việc đánh dấu CTOT EXPIRED vẫn chỉ xảy ra sau CTOT +10 phút.
