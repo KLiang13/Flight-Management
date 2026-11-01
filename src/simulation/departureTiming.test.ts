@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { runSimulation } from './runSimulation';
 import { applyWeatherPeriods } from './weather';
-import { clearanceRequestTime, departureTsatAt, departureWaitMinutesAt, stationaryWaitMinutesAt } from './departureTiming';
+import { clearanceRequestTime, departureCtotAt, departureTsatAt, departureWaitMinutesAt, stationaryWaitMinutesAt } from './departureTiming';
 
 const minute = 60_000;
 const flight = () => runSimulation([{
@@ -76,5 +76,23 @@ describe('stationary surface waiting', () => {
     expect(stationaryWaitMinutesAt(departure, 70 * minute)).toBe(3);
     expect(stationaryWaitMinutesAt(departure, 76 * minute)).toBe(3);
     expect(stationaryWaitMinutesAt(departure, 90 * minute)).toBe(3);
+  });
+});
+
+describe('CTOT displayed at replay time', () => {
+  it('shows the old CTOT until recovery, then the new CTOT, and restores it on rewind', () => {
+    const original = flight();
+    const recovered = applyWeatherPeriods([original], [], [{ start: 55 * minute, end: 100 * minute }], '25L-25R').flights[0];
+    expect(departureCtotAt(recovered, 99 * minute)).toBe(original.ctot);
+    expect(departureCtotAt(recovered, 100 * minute)).toBe(recovered.wheelsOff);
+    expect(departureCtotAt(recovered, 50 * minute)).toBe(original.ctot);
+  });
+  it('revises only CTOT for an aircraft that already started taxiing', () => {
+    const original = flight();
+    const recovered = applyWeatherPeriods([original], [], [{ start: original.taxiStart + minute, end: 100 * minute }], '25L-25R').flights[0];
+    expect(recovered.reissuedTsat).toBeNull();
+    expect(recovered.reissuedCtot).toBe(recovered.wheelsOff);
+    expect(departureTsatAt(recovered, 100 * minute)).toBe(original.tsat);
+    expect(departureCtotAt(recovered, 100 * minute)).toBe(recovered.reissuedCtot);
   });
 });

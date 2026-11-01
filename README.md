@@ -98,7 +98,7 @@ CTOT − 5 phút ≤ thời điểm cất cánh ≤ CTOT + 10 phút
 | Đã lăn, chưa qua điểm X | Bố trí quay về vị trí đỗ khả dụng gần nhất và chờ cấp lịch mới |
 | Đã qua điểm X | Được tiếp tục khởi hành, đánh dấu **Không tuân thủ CTOT** và xử lý **CTOT mới** |
 
-Điều chỉnh được phân biệt theo vị trí: ở stand sử dụng **Revised TSAT**; khi đã ở ngoài sân đỗ sử dụng **Revised CTOT**. CTOT gốc được giữ để kiểm tra việc tuân thủ cửa sổ cất cánh.
+Điều chỉnh khi thời tiết xấu được phân biệt theo trạng thái khởi động: tàu chưa khởi động sử dụng **Revised TSAT** theo CTOT mới; tàu đã khởi động sử dụng **Revised CTOT**, giữ nguyên TSAT kể cả khi phải quay về stand. Điện văn hết hạn chỉ thông báo **CTOT EXPIRED**, không yêu cầu chờ TSAT mới cho tàu đã nổ máy. Cột **CTOT** hiển thị giờ mới từ thời điểm cấp lại; khi tua về trước thời điểm cấp, cột hiển thị giờ cũ. CTOT gốc được giữ trong dữ liệu để đối chiếu tuân thủ.
 
 ### Cách tính tổng thời gian chờ
 

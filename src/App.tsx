@@ -15,7 +15,7 @@ import { getHoldingPoint, getRunwaySegment, getTaxiRouteDescription, MAP_VIEWBOX
 import { arrivalPosition, departurePosition, TAKEOFF_VISIBLE_AFTER_MS } from './map/playback';
 import { planSurfaceTraffic } from './simulation/surfaceTraffic';
 import { scheduleArrivals, type ArrivalTimelineItem } from './simulation/arrivals';
-import { clearanceRequestTime, departureTsatAt, departureWaitMinutesAt } from './simulation/departureTiming';
+import { clearanceRequestTime, departureCtotAt, departureTsatAt, departureWaitMinutesAt } from './simulation/departureTiming';
 import { applyWeatherPeriods, composeWeatherDclEvents, weatherStatus, departureAtTime, hasMissedCtotAt, hasReissuedSlotAt, type WeatherPeriod } from './simulation/weather';
 
 type FilePickerWindow = Window & { showOpenFilePicker?: (options?: unknown) => Promise<FileSystemFileHandle[]> };
@@ -479,7 +479,7 @@ function App() {
               const weather = weatherStatus(flight, timeCursor);
               const missed = hasMissedCtotAt(flight, timeCursor);
               const revisedSlot = flight.reissuedTsat ?? flight.reissuedCtot;
-              const tsat = weather?.pending ? null : departureTsatAt(flight, timeCursor);
+              const tsat = weather?.pending && flight.weather?.heldAtStand ? null : departureTsatAt(flight, timeCursor);
               const phase = departurePosition(flight, timeCursor, 0, runway).phase;
               const status = weather?.label ?? (missed ? 'Không tuân thủ CTOT'
                 : phase.startsWith('đã cất cánh') ? 'Đã cất cánh'
@@ -492,7 +492,7 @@ function App() {
                 <td className="order-cell">{flight.order.toString().padStart(2, '0')}</td>
                 <td><div className="flight-call">{flight.callsign}</div><div className="flight-type">{flight.aircraftType}</div></td>
                 <td><span className="stand-pill">{weather && flight.weather?.returnStand && timeCursor >= (flight.weather.returnEnd ?? Infinity) ? flight.weather.returnStand : flight.stand}</span></td>
-                <td className="time-cell">{fmtShort(flight.ctot)}</td>
+                <td className="time-cell" title={`CTOT gốc ${fmtShort(flight.ctot)}`}>{fmtShort(departureCtotAt(flight, timeCursor))}</td>
                 <td className="time-cell" title={`CTOT gốc ${fmtShort(flight.ctot)}${revisedSlot !== null && Number.isFinite(revisedSlot) ? ` · ${flight.reissuedTsat !== null ? 'TSAT' : 'CTOT'} mới ${fmtShort(revisedSlot)}` : ''}`}>{tsat === null || !Number.isFinite(tsat) ? 'Chờ cấp lại' : fmtShort(tsat)}</td>
                 <td><span className={`status-pill ${missed ? 'status-late' : weather?.pending || (!weather && flight.waitMinutes > .1) ? 'status-wait' : 'status-ok'}`}><i />{status}</span></td>
               </tr>;

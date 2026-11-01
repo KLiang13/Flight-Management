@@ -39,7 +39,7 @@ export function departurePosition(flight: TimelineItem, time: number, queueIndex
         phase: 'không tuân thủ CTOT · quay về vị trí đỗ', rotation: 0,
       };
       if (time < weather.resumedTaxiStart) return {
-        point: getStandPoint(weather.returnStand), phase: `chờ TSAT/CTOT mới tại stand ${weather.returnStand}`, rotation: 0,
+        point: getStandPoint(weather.returnStand), phase: `chờ CTOT mới tại stand ${weather.returnStand}`, rotation: 0,
       };
     }
     if (missed && !weather.returnStand && time < flight.runwayEntryStart) return {
@@ -53,7 +53,7 @@ export function departurePosition(flight: TimelineItem, time: number, queueIndex
     if ((weather.heldAtStand || missed) && time < weather.groundReadyAt) {
       const route = getTaxiRoutePoints(weather.returnStand ?? weather.groundStand, runway);
       return { point: pointAlongPath(route, (time - weather.resumedTaxiStart) / (weather.groundReadyAt - weather.resumedTaxiStart)),
-        phase: 'lăn theo TSAT mới', rotation: 0 };
+        phase: weather.heldAtStand ? 'lăn theo TSAT mới' : 'lăn theo CTOT mới', rotation: 0 };
     }
     if (!weather.heldAtStand && !missed && time < weather.groundReadyAt) return departurePosition(weather.previous, Math.min(time, weather.previous.runwayEntryStart - 1), queueIndex, runway);
     if (time < flight.runwayEntryStart) return {

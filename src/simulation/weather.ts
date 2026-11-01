@@ -4,7 +4,7 @@ import type { ArrivalTimelineItem } from './arrivals';
 import { departurePosition } from '../map/playback';
 import { getNearestReturnStand, getTaxiRoutePoints, type MapPoint } from '../map/airfieldGeometry';
 import type { DclEvent } from '../dcl/dclScenario';
-import { departureWaitMinutesAt } from './departureTiming';
+import { departureTsatAt, departureWaitMinutesAt } from './departureTiming';
 import { releaseTakeoffRoll, arrivalDelayForBookedRolls, reserveCrossingsBeforeDeparture } from './runwayCoordination';
 import { distanceAlongPathToPoint } from '../map/surfaceGraph';
 
@@ -73,7 +73,7 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
     const old = previous.weather;
     const waitingAfterReturn = previous.returnEnd !== null && previous.returnEnd <= period.start
       && (previous.secondTaxiStart ?? Infinity) >= period.start;
-    const heldAtStand = previous.taxiStart >= period.start || waitingAfterReturn
+    const heldAtStand = previous.taxiStart >= period.start
       || Boolean(old?.heldAtStand && old.resumedTaxiStart >= period.start);
     const groundStand = waitingAfterReturn ? previous.returnStand! : old?.heldAtStand
       ? old.returnStand ?? old.groundStand : previous.stand;
@@ -126,7 +126,7 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
   function withState(state: WeatherDepartureState, wheelsOff: number): TimelineItem {
     const previous = state.previous;
     const issued = state.revisionAt !== null && Number.isFinite(wheelsOff);
-    const revisedAtStand = state.heldAtStand || state.returnStand !== null;
+    const revisedAtStand = state.heldAtStand;
     const result = { ...previous, weather: state, wheelsOff, runwayEntryStart: wheelsOff - MOVEMENT, takeoffRollStart: wheelsOff - TAKEOFF_ROLL_MS,
       missedCtot: previous.missedCtot || state.missedAt !== null,
       returnStart: state.returnStart, returnEnd: state.returnEnd, returnStand: state.returnStand,
@@ -315,11 +315,11 @@ export function weatherStatus(flight: TimelineItem, time: number): { label: stri
   if (time < weather.start) return weatherStatus(weather.previous, time);
   const missed = weather.missedAt !== null && time >= weather.missedAt;
   const pending = weather.revisionAt === null || time < weather.revisionAt;
-  const returning = missed && weather.returnEnd !== null && time < weather.returnEnd;
   return {
-    label: returning ? 'Không tuân thủ CTOT · về vị trí đỗ' : pending
-      ? missed ? 'Không tuân thủ CTOT · chờ cấp lại' : 'Chờ thời tiết tốt' : missed ? 'Không tuân thủ CTOT' : 'Đã cấp TSAT/CTOT mới',
-    missed, pending, tsat: pending ? null : flight.reissuedTsat,
+    label: pending
+      ? missed && !weather.heldAtStand ? 'CTOT EXPIRED' : 'Chờ thời tiết tốt'
+      : weather.heldAtStand ? 'Đã cấp TSAT mới' : 'Đã cấp CTOT mới',
+    missed, pending, tsat: pending && weather.heldAtStand ? null : departureTsatAt(flight, time),
   };
 }
 
@@ -352,7 +352,7 @@ export function weatherDclEvents(flights: TimelineItem[], periods: WeatherPeriod
       if (state?.missedAt !== null && state?.missedAt !== undefined) events.push({
         id: `${flight.id}-weather-${period.start}-expired`, flightId: flight.id, time: state.missedAt,
         callsign: flight.callsign, direction: 'Hệ thống → Tổ lái',
-        message: `FSM ${messageStamp(state.missedAt)} VVTS ${flight.callsign} CTOT EXPIRED ${state.returnStand ? `RETURN TO STAND ${state.returnStand}` : 'CONTINUE FROM POINT X'}`, status: 'OK',
+        message: `FSM ${messageStamp(state.missedAt)} VVTS ${flight.callsign} CTOT EXPIRED`, status: 'OK',
       });
       const revisionAt = state ? state.revisionAt : period.end;
       if (revisionAt === null || !Number.isFinite(current.wheelsOff)) continue;
@@ -360,7 +360,7 @@ export function weatherDclEvents(flights: TimelineItem[], periods: WeatherPeriod
       if (periods.some(later => later.start > period.start && clearanceAt >= later.start && clearanceAt < (later.end ?? Infinity))) continue;
       const startup = current.reissuedTsat ?? original.tsat;
       const slot = current.reissuedCtot ?? current.wheelsOff;
-      const revised = state && !state.heldAtStand && !state.returnStand ? 'CTOT' : 'TSAT';
+      const revised = state && !state.heldAtStand ? 'CTOT' : 'TSAT';
       const value = revised === 'TSAT' ? startup : slot;
       const stamp = new Date(value).toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit' }).replace(':', '');
       events.push({

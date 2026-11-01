@@ -55,11 +55,13 @@ describe('manual adverse weather', () => {
     const after = departurePosition(rain, returning.returnStart!, 0, '25L-25R').point;
     expect(Math.hypot(before.x - after.x, before.y - after.y)).toBeLessThan(0.01);
     const recovered = applyWeatherPeriods(base, [], [{ start: 11 * minute, end: 50 * minute }], '25L-25R').flights[0];
-    expect(recovered.reissuedTsat).toBeGreaterThanOrEqual(50 * minute);
-    expect(recovered.reissuedCtot).toBeNull();
+    expect(recovered.reissuedTsat).toBeNull();
+    expect(recovered.reissuedCtot).toBe(recovered.wheelsOff);
     const events = weatherDclEvents([recovered], [{ start: 11 * minute, end: 50 * minute }]);
     expect(events.every((event) => formatDclMessage(event.message).length > 1)).toBe(true);
-    expect(events.some((event) => event.message.includes('TSAT REVISED'))).toBe(true);
+    expect(events.some((event) => event.message.includes('CTOT REVISED'))).toBe(true);
+    expect(events.some((event) => event.message.includes('TSAT REVISED'))).toBe(false);
+    expect(events.filter(event => event.message.includes('CTOT EXPIRED')).every(event => formatDclMessage(event.message).length === 2)).toBe(true);
     expect(recovered.runwayEntryStart).toBeGreaterThan(recovered.weather!.returnEnd!);
     expect(departurePosition(recovered, recovered.takeoffRollStart + 30_000, 0, '25L-25R').phase).toBe('cất cánh 25L');
   });

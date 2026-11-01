@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { runSimulation } from './runSimulation';
-import { applyWeatherPeriods, hasMissedCtotAt, weatherDclEvents, composeWeatherDclEvents } from './weather';
+import { applyWeatherPeriods, hasMissedCtotAt, weatherDclEvents, composeWeatherDclEvents, weatherStatus } from './weather';
 import { clearanceRequestTime, departureWaitMinutesAt } from './departureTiming';
 import { departurePosition } from '../map/playback';
 import { formatDclMessage, createDclEvents } from '../dcl/dclScenario';
@@ -92,5 +92,25 @@ describe('weather suspension rules', () => {
     const before = departurePosition(first, start, 0, '25L-25R').point;
     const after = departurePosition(repeated, start, 0, '25L-25R').point;
     expect(Math.hypot(before.x - after.x, before.y - after.y)).toBeLessThan(0.01);
+  });
+});
+
+describe('started aircraft CTOT status', () => {
+  it('shows CTOT EXPIRED only after expiry and until a replacement is issued', () => {
+    const planned = base(790, 800);
+    const recovered = applyWeatherPeriods([planned], [], [{ start: 793 * minute, end: 825 * minute }], '25L-25R').flights[0];
+    expect(weatherStatus(recovered, 809 * minute)?.label).toBe('Chờ thời tiết tốt');
+    expect(weatherStatus(recovered, 810 * minute)?.label).not.toBe('CTOT EXPIRED');
+    expect(weatherStatus(recovered, 810 * minute + 1)?.label).toBe('CTOT EXPIRED');
+    expect(weatherStatus(recovered, 824 * minute)?.tsat).toBe(planned.tsat);
+    expect(weatherStatus(recovered, 825 * minute)?.label).toBe('Đã cấp CTOT mới');
+    expect(recovered.reissuedTsat).toBeNull();
+  });
+  it('does not label an unstarted aircraft CTOT EXPIRED during startup suspension', () => {
+    const planned = base(797, 807);
+    const held = applyWeatherPeriods([planned], [], [{ start: 787 * minute, end: 850 * minute }], '25L-25R').flights[0];
+    expect(weatherStatus(held, 840 * minute)?.label).toBe('Chờ thời tiết tốt');
+    expect(weatherStatus(held, 840 * minute)?.tsat).toBeNull();
+    expect(weatherStatus(held, 850 * minute)?.label).toBe('Đã cấp TSAT mới');
   });
 });

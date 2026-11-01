@@ -65,9 +65,9 @@ describe('Flight operations dashboard', () => {
     expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).toHaveTextContent('Chờ thời tiết tốt');
     fireEvent.click(rain);
     expect(rain).toHaveAttribute('aria-checked', 'false');
-    expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).toHaveTextContent('Đã cấp TSAT/CTOT mới');
+    expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).toHaveTextContent('Đã cấp TSAT mới');
     expect(dclBoard).toHaveTextContent('TSAT REVISED');
-    const revised = document.querySelector('.time-cell[title]')?.getAttribute('title')?.match(/TSAT mới (\d{2}):(\d{2})/);
+    const revised = document.querySelector('.time-cell[title*="TSAT mới"]')?.getAttribute('title')?.match(/TSAT mới (\d{2}):(\d{2})/);
     expect(revised).not.toBeNull();
     const startupMinute = Number(revised![1]) * 60 + Number(revised![2]);
     let takeoffVisible = false;
