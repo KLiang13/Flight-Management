@@ -296,7 +296,8 @@ function reserveWeatherPlan(flights: TimelineItem[], arrivals: ArrivalTimelineIt
         legs: weatherTrajectory(visibleStart, state.returnEnd, time => departurePosition(flight, time, 0, runway)),
         releaseDelay: delay => delay });
     }
-    const end = Number.isFinite(flight.wheelsOff) ? flight.wheelsOff : Math.max(start + 2000, state?.returnEnd ?? start);
+    const remainingTaxiEnd = state && !state.heldAtStand && !state.returnStand && Number.isFinite(state.groundReadyAt) ? state.groundReadyAt : start;
+    const end = Number.isFinite(flight.wheelsOff) ? flight.wheelsOff : Math.max(start + 2000, state?.returnEnd ?? start, remainingTaxiEnd);
     const queueIndex = (time: number) => ordered.filter(item => {
       const weather = item.weather;
       return weather && !weather.returnStand && !weather.heldAtStand && time >= weather.groundReadyAt && time < item.runwayEntryStart;

@@ -500,14 +500,15 @@ function App() {
               const weather = weatherStatus(flight, timeCursor);
               const missed = hasMissedCtotAt(flight, timeCursor);
               const revisedSlot = flight.reissuedTsat ?? flight.reissuedCtot;
+              const awaitingWeatherTimes = badWeather && missed && timeCursor < flight.wheelsOff;
               const tsat = weather?.pending && flight.weather?.heldAtStand ? null : departureTsatAt(flight, timeCursor);
               const status = badWeather && timeCursor < flight.takeoffRollStart ? missed ? 'Không tuân thủ CTOT' : 'Chờ thời tiết tốt' : departureStatusAt(flight, timeCursor, runway);
               return <tr key={flight.id} className={selectedFlight === flight.callsign ? 'selected-row' : ''} onClick={() => setSelectedFlight(flight.callsign)}>
                 <td className="order-cell">{flight.order.toString().padStart(2, '0')}</td>
                 <td><div className="flight-call">{flight.callsign}</div><div className="flight-type">{flight.aircraftType}</div></td>
                 <td><span className="stand-pill">{departureStandAt(flight, timeCursor)}</span></td>
-                <td className="time-cell" title={`CTOT gốc ${fmtShort(flight.ctot)}`}>{fmtShort(departureCtotAt(flight, timeCursor))}</td>
-                <td className="time-cell" title={`CTOT gốc ${fmtShort(flight.ctot)}${revisedSlot !== null && Number.isFinite(revisedSlot) ? ` · ${flight.reissuedTsat !== null ? 'TSAT' : 'CTOT'} mới ${fmtShort(revisedSlot)}` : ''}`}>{tsat === null || !Number.isFinite(tsat) ? 'Chờ cấp lại' : fmtShort(tsat)}</td>
+                <td className="time-cell" title={`CTOT gốc ${fmtShort(flight.ctot)}`}>{awaitingWeatherTimes ? 'Đang chờ CTOT' : fmtShort(departureCtotAt(flight, timeCursor))}</td>
+                <td className="time-cell" title={`CTOT gốc ${fmtShort(flight.ctot)}${revisedSlot !== null && Number.isFinite(revisedSlot) ? ` · ${flight.reissuedTsat !== null ? 'TSAT' : 'CTOT'} mới ${fmtShort(revisedSlot)}` : ''}`}>{awaitingWeatherTimes ? 'Đang chờ TSAT' : tsat === null || !Number.isFinite(tsat) ? 'Chờ cấp lại' : fmtShort(tsat)}</td>
                 <td><span className={`status-pill ${missed ? 'status-late' : weather?.pending || (!weather && flight.waitMinutes > .1) ? 'status-wait' : 'status-ok'}`}><i />{status}</span></td>
               </tr>;
             })}

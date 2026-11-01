@@ -12,6 +12,18 @@ import { toScheduledFlights } from './runSimulation';
 import { scheduleArrivals } from './arrivals';
 
 describe('weather route reservations', () => {
+  it('finishes taxiing to S1 during open rain after passing the lamp', () => {
+    const baseline = planSurfaceTraffic(runSimulation([{ id: 'PASSED', callsign: 'PASSED', aircraftType: 'A321',
+      wakeCategory: 'M', stand: '71', readyAt: 790 * 60_000, ctot: 810 * 60_000, taxiMinutes: 8, row: {} }]).flights, [], '25L-25R').flights;
+    const start = baseline[0].runwayEntryStart - 4000;
+    const flight = applyWeatherPeriods(baseline, [], [{ start, end: null }], '25L-25R').flights[0];
+    expect(flight.weather!.passedWeatherPoint).toBe(true);
+    const initial = departurePosition(flight, start, 0, '25L-25R').point;
+    const final = departurePosition(flight, start + 60_000, 0, '25L-25R').point;
+    expect(Math.hypot(initial.x - final.x, initial.y - final.y)).toBeGreaterThan(1);
+    expect(final).toEqual(baseline[0].surfacePlan!.legs.find(leg => leg.phase === 'vào đường băng 25L')!.points[0]);
+    expect(flight.wheelsOff).toBe(Infinity);
+  });
   it('recovers the calibrated mixed workbook after a mid-day shower', async () => {
     const bytes = readFileSync('public/samples/21102026.xlsx');
     const file = new File([bytes], '21102026.xlsx');
