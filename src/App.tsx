@@ -16,7 +16,7 @@ import { arrivalPosition, departurePosition, TAKEOFF_VISIBLE_AFTER_MS } from './
 import { planSurfaceTraffic } from './simulation/surfaceTraffic';
 import { scheduleArrivals, type ArrivalTimelineItem } from './simulation/arrivals';
 import { clearanceRequestTime, departureCtotAt, departureTsatAt, departureWaitMinutesAt } from './simulation/departureTiming';
-import { applyWeatherPeriods, composeWeatherDclEvents, weatherStatus, departureStatusAt, departureAtTime, hasMissedCtotAt, hasReissuedSlotAt, type WeatherPeriod } from './simulation/weather';
+import { applyWeatherPeriods, composeWeatherDclEvents, weatherStatus, departureStandAt, departureStatusAt, departureAtTime, hasMissedCtotAt, hasReissuedSlotAt, type WeatherPeriod } from './simulation/weather';
 
 type FilePickerWindow = Window & { showOpenFilePicker?: (options?: unknown) => Promise<FileSystemFileHandle[]> };
 const SAMPLE_FILES = [
@@ -69,6 +69,7 @@ function App() {
   const [zoom, setZoom] = useState(1);
   const [filter, setFilter] = useState('all');
   const [showAllFlights, setShowAllFlights] = useState(false);
+  const [showDclHistory, setShowDclHistory] = useState(false);
   const [focusMode, setFocusMode] = useState(() => localStorage.getItem('tsn-focus-mode') === 'true');
   const fileInput = useRef<HTMLInputElement>(null);
   const mapScroller = useRef<HTMLDivElement>(null);
@@ -321,7 +322,11 @@ function App() {
   const displayEvents = useMemo(() => {
     return composeWeatherDclEvents(events, flights, weatherPeriods);
   }, [events, flights, weatherPeriods]);
-  const activeEvents = displayEvents.filter((event) => event.time <= timeCursor).slice(-8).reverse();
+  const pastEventCount = displayEvents.filter(event => event.time <= timeCursor).length;
+  const activeEvents = useMemo(() => {
+    const past = displayEvents.slice(0, pastEventCount);
+    return (showDclHistory ? past : past.slice(-8)).reverse();
+  }, [displayEvents, pastEventCount, showDclHistory]);
   const currentMissed = flights.filter((flight) => hasMissedCtotAt(flight, timeCursor)).length;
   const currentReissued = flights.filter((flight) => hasReissuedSlotAt(flight, timeCursor)).length;
   const departureRcdTimes = useMemo(() => {
@@ -449,7 +454,7 @@ function App() {
             <time>{fmtTime(weatherPeriods.flatMap(period => [period.start, ...(period.end === null ? [] : [period.end])]).filter(at => at <= timeCursor).at(-1) ?? dayStart)} LT</time>
           </section>
         <section className="panel dcl-panel" aria-label="Bản tin DCL"><button className="expand-panel dcl-expand" aria-label="Phóng rộng bản tin DCL" title="Phóng rộng DCL · Esc để thoát" onClick={event => { const panel = event.currentTarget.closest('.dcl-panel'); if (document.fullscreenElement) void document.exitFullscreen(); else if (panel) void panel.requestFullscreen(); }}><Maximize2 size={16} /></button>
-          <div className="panel-heading"><div><h2>Bản tin DCL</h2></div></div>
+          <div className="panel-heading"><div><h2>Bản tin DCL</h2></div><button className="dcl-history-toggle" aria-pressed={showDclHistory} onClick={() => setShowDclHistory(value => !value)}>{showDclHistory ? '8 tin mới nhất' : 'Xem lịch sử'}</button></div>
           <div className="dcl-body">
             <table className="dcl-board" aria-label="Bảng điện văn DCL">
               <thead><tr><th>GIỜ LT</th><th>LUỒNG</th><th>ĐIỆN VĂN</th><th>KẾT QUẢ</th></tr></thead>
@@ -458,7 +463,7 @@ function App() {
               </tbody>
             </table>
           </div>
-          <div className="dcl-footer"><span><span className="live-dot" />{fmtNumber(activeEvents.length)} / {fmtNumber(displayEvents.length)} bản tin trong ngày</span><span>RCD <i>→</i> FSM <i>→</i> CLD <i>→</i> CDA</span></div>
+          <div className="dcl-footer"><span><span className="live-dot" />{fmtNumber(activeEvents.length)} / {fmtNumber(pastEventCount)} bản tin đã phát</span><span>RCD <i>→</i> FSM <i>→</i> CLD <i>→</i> CDA</span></div>
         </section>
         </div>
       </div>
@@ -484,7 +489,7 @@ function App() {
               return <tr key={flight.id} className={selectedFlight === flight.callsign ? 'selected-row' : ''} onClick={() => setSelectedFlight(flight.callsign)}>
                 <td className="order-cell">{flight.order.toString().padStart(2, '0')}</td>
                 <td><div className="flight-call">{flight.callsign}</div><div className="flight-type">{flight.aircraftType}</div></td>
-                <td><span className="stand-pill">{weather && flight.weather?.returnStand && timeCursor >= (flight.weather.returnEnd ?? Infinity) ? flight.weather.returnStand : flight.stand}</span></td>
+                <td><span className="stand-pill">{departureStandAt(flight, timeCursor)}</span></td>
                 <td className="time-cell" title={`CTOT gốc ${fmtShort(flight.ctot)}`}>{fmtShort(departureCtotAt(flight, timeCursor))}</td>
                 <td className="time-cell" title={`CTOT gốc ${fmtShort(flight.ctot)}${revisedSlot !== null && Number.isFinite(revisedSlot) ? ` · ${flight.reissuedTsat !== null ? 'TSAT' : 'CTOT'} mới ${fmtShort(revisedSlot)}` : ''}`}>{tsat === null || !Number.isFinite(tsat) ? 'Chờ cấp lại' : fmtShort(tsat)}</td>
                 <td><span className={`status-pill ${missed ? 'status-late' : weather?.pending || (!weather && flight.waitMinutes > .1) ? 'status-wait' : 'status-ok'}`}><i />{status}</span></td>

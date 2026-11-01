@@ -84,3 +84,6 @@
 @media (prefers-reduced-motion: reduce) {
   .weather-bulletin { transition: none; }
 }
+
+.dcl-history-toggle{padding:6px 9px;border:1px solid var(--border);border-radius:5px;background:#f8fafc;color:#334155;font:11px var(--sans);white-space:nowrap}
+.dcl-history-toggle[aria-pressed=true]{background:#e8f3fa;border-color:#7aa7c2;color:#075985}

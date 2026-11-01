@@ -112,7 +112,7 @@ Khi cấp **Revised TSAT**, bộ đếm sử dụng mốc mới từ thời đi�
 
 1. Chạy lịch và phát lại đến thời điểm muốn tạo tình huống.
 2. Bật **Thời tiết xấu** để dừng cấp phép cất/hạ cánh mới. Tàu đến còn trên không và tiếp cận trong khoảng ngừng tiếp nhận được chuyển hướng sang sân bay khác, không quay lại trong ngày mô phỏng. Tàu đã chạm bánh tiếp tục thoát đường băng và về stand; các lượt tiếp cận bắt đầu sau khi thời tiết tốt có thể được tiếp nhận bình thường.
-3. Đồng hồ tiếp tục chạy; hệ thống theo dõi CTOT và xử lý từng tàu theo vị trí, thời điểm hết hạn và khả năng tiếp nhận của stand.
+3. Ngay khi bắt đầu mưa, tàu đang lăn nhưng chưa vượt điểm đèn trên TWY S gần S1 sẽ theo nhánh cong cạnh 1A xuống TWY V để về stand trống gần nhất. Quyết định dựa trên vị trí tại lúc bắt đầu mưa, không chờ CTOT hết hạn. Tàu đã vượt đèn tiếp tục đến S1, chờ hết mưa và lượt vào 25L mới. Tàu chưa rời stand giữ nguyên vị trí đỗ. Việc đánh dấu CTOT EXPIRED vẫn chỉ xảy ra sau CTOT +10 phút.
 4. Tắt thời tiết xấu để khôi phục khai thác, cấp lại TSAT/CTOT theo trạng thái và tiếp tục điều phối.
 
 Các lần bật/tắt được lưu theo dòng thời gian. Khi tua về quá khứ rồi thay đổi thời tiết, kịch bản sau thời điểm đó được tính lại.
@@ -130,6 +130,8 @@ Công tắc thời tiết nằm trên thanh bản đồ. Khi bật, bản đồ 
 Giao diện chia sơ đồ và DCL theo tỉ lệ 60/40 trên màn hình rộng, có chế độ tập trung và phóng rộng từng bảng. Phát lại dùng nhịp vẽ màn hình với giới hạn 30 lần cập nhật/giây; thời gian mô phỏng tiến theo thời gian thực đã trôi qua và hệ số phát lại. Khi chuyển sang tab khác, phát lại không nhảy vượt thời gian lúc quay lại.
 
 ## Điện văn DCL
+
+Mặc định bảng hiển thị 8 điện văn gần nhất. Nút **Xem lịch sử** mở toàn bộ điện văn đã phát đến thời điểm đang xem, mới nhất ở trên; không hiển thị điện văn tương lai. Chọn **8 tin mới nhất** để thu gọn lại mà không đổi đồng hồ phát lại.
 
 | Bản tin | Vai trò trong kịch bản |
 | --- | --- |

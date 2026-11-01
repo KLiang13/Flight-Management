@@ -21,7 +21,7 @@ export function departurePosition(flight: TimelineItem, time: number, queueIndex
   const weather = flight.weather;
   if (weather) {
     if (time < weather.start) return departurePosition(weather.previous, time, queueIndex, runway);
-    if (weather.previous.runwayEntryStart <= weather.start && !weather.returnStand && time < flight.takeoffRollStart) {
+    if (weather.previous.runwayEntryStart <= weather.start && !weather.atStand && !weather.returnStand && time < flight.takeoffRollStart) {
       const entryPath = getRunwaySegment(runway).entryPath;
       const previousPoint = departurePosition(weather.previous, weather.start, queueIndex, runway).point;
       const length = entryPath.slice(1).reduce((sum, point, i) => sum + Math.hypot(point.x - entryPath[i].x, point.y - entryPath[i].y), 0);
@@ -32,14 +32,14 @@ export function departurePosition(flight: TimelineItem, time: number, queueIndex
     }
 
     const missed = weather.missedAt !== null && time >= weather.missedAt;
-    if (missed && weather.returnStand) {
+    if (weather.returnStand && time >= (weather.returnStart ?? Infinity)) {
       if (weather.returnStart !== null && time < weather.returnStart) return {
         ...departurePosition(weather.previous, Math.min(time, weather.previous.runwayEntryStart - 1), queueIndex, runway),
         phase: 'không tuân thủ CTOT · chờ vị trí đỗ trống',
       };
       if (weather.returnEnd !== null && time < weather.returnEnd && weather.returnPath.length) return {
         point: pointAlongPath(weather.returnPath, (time - weather.returnStart!) / (weather.returnEnd - weather.returnStart!)),
-        phase: 'không tuân thủ CTOT · quay về vị trí đỗ', rotation: 0,
+        phase: missed ? 'không tuân thủ CTOT · quay về vị trí đỗ' : 'quay về vị trí đỗ do thời tiết', rotation: 0,
       };
       if (time < weather.resumedTaxiStart) return {
         point: getStandPoint(weather.returnStand), phase: `chờ CTOT mới tại stand ${weather.returnStand}`, rotation: 0,
@@ -50,11 +50,11 @@ export function departurePosition(flight: TimelineItem, time: number, queueIndex
       ...(time >= weather.groundReadyAt ? { point: weatherHoldingPosition(flight, queueIndex, runway) } : {}),
       phase: 'chờ lượt vào 25L',
     };
-    if (weather.heldAtStand && time < weather.resumedTaxiStart) return {
+    if ((weather.heldAtStand || weather.atStand) && time < weather.resumedTaxiStart) return {
       point: getStandPoint(weather.groundStand),
       phase: missed ? `chờ TSAT/CTOT mới tại stand ${weather.groundStand}` : `chờ thời tiết tốt tại stand ${weather.groundStand}`, rotation: 0,
     };
-    if ((weather.heldAtStand || missed) && time < weather.groundReadyAt) {
+    if ((weather.heldAtStand || weather.atStand || weather.returnStand) && time < weather.groundReadyAt) {
       const route = getTaxiRoutePoints(weather.returnStand ?? weather.groundStand, runway);
       return { point: pointAlongPath(route, (time - weather.resumedTaxiStart) / (weather.groundReadyAt - weather.resumedTaxiStart)),
         phase: weather.heldAtStand ? 'lăn theo TSAT mới' : 'lăn theo CTOT mới', rotation: 0 };

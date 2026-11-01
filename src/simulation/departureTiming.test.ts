@@ -48,7 +48,7 @@ describe('RCD appearance and TSAT waiting time', () => {
     const second = applyWeatherPeriods([first], [], [{ start, end: start + 9 * minute }], '25L-25R').flights[0];
     expect(second.reissuedTsat).toBeNull();
     expect(second.reissuedCtot).not.toBeNull();
-    expect(second.waitMinutes).toBe(0);
+    expect(departureTsatAt(second, second.wheelsOff)).toBe(first.reissuedTsat);
     expect(departureWaitMinutesAt(second, second.wheelsOff)).toBe(second.waitMinutes);
   });
 

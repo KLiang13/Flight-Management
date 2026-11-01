@@ -43,7 +43,8 @@ describe('manual adverse weather', () => {
     expect(weatherStatus(delayed, 30 * minute)?.missed).toBe(false);
     expect(weatherStatus(delayed, 31 * minute)?.missed).toBe(true);
     expect(delayed.reissuedCtot).toBeNull();
-    expect(departurePosition(delayed, 50 * minute, 0, '25L-25R').phase).toContain('25L');
+    expect(delayed.weather!.returnStart).toBe(11 * minute);
+    expect(departurePosition(delayed, 50 * minute, 0, '25L-25R').phase).toContain('stand');
   });
 
   it('returns from the current position before point X, then issues finite slots on recovery', () => {
@@ -81,7 +82,8 @@ describe('manual adverse weather', () => {
 
   it('lets an expired aircraft already beyond point X continue before a later startup', () => {
     const base = runSimulation([flight('EXPIRED', 10, 20), flight('VALID', 20, 50)]).flights;
-    const result = applyWeatherPeriods(base, [], [{ start: 11 * minute, end: 35 * minute }], '25L-25R');
+    const start = base.find(item => item.id === 'EXPIRED')!.runwayEntryStart - 1;
+    const result = applyWeatherPeriods(base, [], [{ start, end: 35 * minute }], '25L-25R');
     const valid = result.flights.find((item) => item.id === 'VALID')!;
     const expired = result.flights.find((item) => item.id === 'EXPIRED')!;
     expect(valid.weather?.missedAt).toBeNull();
@@ -113,7 +115,8 @@ describe('manual adverse weather', () => {
     const base = runSimulation([flight('ONE', 10, 20), flight('TWO', 12, 22)]).flights;
     const first = [{ start: 11 * minute, end: 50 * minute }];
     const initial = applyWeatherPeriods(base, [], first, '25L-25R');
-    const repeated = applyWeatherPeriods(base, [], [...first, { start: 51 * minute, end: 51.5 * minute }], '25L-25R');
+    const lateStart = Math.max(...initial.flights.map(item => item.wheelsOff)) + minute;
+    const repeated = applyWeatherPeriods(base, [], [...first, { start: lateStart, end: lateStart + .5 * minute }], '25L-25R');
     for (const item of initial.flights) {
       const after = repeated.flights.find((candidate) => candidate.id === item.id)!;
       expect(after.reissuedCtot).toBe(item.reissuedCtot);

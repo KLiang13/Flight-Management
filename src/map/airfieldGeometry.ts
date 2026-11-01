@@ -33,13 +33,13 @@ export function getArrivalRoutePoints(stand: string, branch: 'P4' | 'P5' = 'P4')
     fromHold: [P5_HOLD, { x: 440, y: 411 }, crossingExit, ...toStand.slice(1)],
   };
 }
-export function getNearestReturnStand(originalStand: string, unavailable: Set<string>, category: WakeCategory): string {
+export function getNearestReturnStand(originalStand: string, unavailable: Set<string>, category: WakeCategory, from: MapPoint = HOLD_S1): string {
   const international = Number(originalStand) >= 1 && Number(originalStand) <= 16;
   const candidates = international ? [...INTERNATIONAL_BAYS] : category === 'H'
     ? Array.from({ length: 12 }, (_, index) => String(index + 23)) : [...DOMESTIC_BAYS];
   candidates.sort((a, b) => {
     const pa = getStandPoint(a), pb = getStandPoint(b);
-    return Math.hypot(pa.x - HOLD_S1.x, pa.y - HOLD_S1.y) - Math.hypot(pb.x - HOLD_S1.x, pb.y - HOLD_S1.y);
+    return Math.hypot(pa.x - from.x, pa.y - from.y) - Math.hypot(pb.x - from.x, pb.y - from.y);
   });
   return candidates.find((stand) => !unavailable.has(stand)) ?? candidates[0];
 }

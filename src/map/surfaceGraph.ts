@@ -45,7 +45,7 @@ export function pathLength(points: MapPoint[]): number {
 
 
 /** Distance along a chart taxi route to the marked CTOT commitment point near S1. */
-export const CTOT_COMMIT_POINT: MapPoint = { x: 1880, y: V_Y };
+export const CTOT_COMMIT_POINT: MapPoint = { x: 1880, y: S_Y };
 export function distanceAlongPathToPoint(points: MapPoint[], target = CTOT_COMMIT_POINT, tolerance = 36): number | null {
   let traversed = 0;
   let bestDistance = Infinity;
@@ -94,6 +94,8 @@ for (let index = 1; index < sXs.length; index += 1) edge(`S:${sXs[index - 1]}`, 
 node('S1', HOLD_S1);
 edge('S:1945', 'S1', curve({ x: 1945, y: S_Y }, { x: 1963, y: S_Y }, { x: 1973, y: 489 }, HOLD_S1).slice(1, -1));
 edge('V:1880', 'S1', [{ x: 1915, y: 538 }, { x: 1945, y: 520 }, { x: 1968, y: 503 }]);
+const RETURN_1A = curve(CTOT_COMMIT_POINT, { x: 1880, y: 520 }, { x: 1850, y: V_Y }, { x: 1810, y: V_Y });
+edge('S:1880', 'V:1810', RETURN_1A.slice(1, -1));
 edge('V:580', 'S:475', [{ x: 550, y: 559 }, { x: 520, y: 545 }, { x: 488, y: 522 }]);
 edge('V:786', 'S:786', [{ x: 786, y: 532 }]);
 edge('V:1180', 'S:1170', [{ x: 1202, y: 550 }, { x: 1216, y: 530 }, { x: 1216, y: 516 }, { x: 1195, y: 500 }]);
@@ -148,7 +150,7 @@ for (let stand = 17; stand <= 40; stand += 1) {
 }
 node('P5-SOUTH', { x: 475, y: 495 }); edge('P5-SOUTH', 'S:475');
 
-function shortest(from: string, to: string, penalties: Map<string, number>): { points: MapPoint[]; keys: string[] } {
+function shortest(from: string, to: string, penalties: Map<string, number>, blocked = new Set<string>()): { points: MapPoint[]; keys: string[] } {
   const distances = new Map([[from, 0]]), previous = new Map<string, { from: string; edge: Edge }>(), visited = new Set<string>();
   while (true) {
     let current: string | undefined, lowest = Infinity;
@@ -157,6 +159,7 @@ function shortest(from: string, to: string, penalties: Map<string, number>): { p
     if (current === to) break;
     visited.add(current);
     for (const next of edges.get(current) ?? []) {
+      if (blocked.has(next.key)) continue;
       if (next.to.startsWith('B:') && next.to !== to) continue;
       const distance = lowest + next.length * (penalties.get(next.key) ?? 1);
       if (distance < (distances.get(next.to) ?? Infinity)) { distances.set(next.to, distance); previous.set(next.to, { from: current, edge: next }); }
@@ -177,12 +180,29 @@ export function taxiRoutes(stand: string, from: 'stand' | 'S1' | 'P5' = 'stand')
   const end = from === 'stand' ? 'S1' : `B:${normalized}`;
   const penalties = new Map<string, number>(), routes: SurfaceRoute[] = [];
   for (let index = 0; index < 3; index += 1) {
-    const route = shortest(start, end, penalties);
+    const route = shortest(start, end, penalties, from === 'stand'
+      ? new Set(['S1|V:1880', 'S:1880|V:1810']) : new Set());
     const id = route.keys.join('>');
     if (!routes.some((candidate) => candidate.id === id)) routes.push({ id, label: route.keys.filter((part) => /\|S:|S:\d+\|V:|S1/.test(part)).join(' → '), points: route.points });
     for (const edge of route.keys) if (!edge.includes('B:')) penalties.set(edge, (penalties.get(edge) ?? 1) * 2.5);
   }
   cache.set(key, routes); return routes;
+}
+
+/** Follow the active taxi centreline to the lamp, curve through 1A, then join V. */
+export function weatherReturnVia1A(from: MapPoint, outbound: MapPoint[], stand: string): MapPoint[] {
+  const turn = outbound.findIndex(point => Math.hypot(point.x - CTOT_COMMIT_POINT.x, point.y - CTOT_COMMIT_POINT.y) < 1);
+  if (turn < 0) throw new Error('Tuyến lăn không đi qua điểm đèn S1.');
+  let nearest = 0, projected = outbound[0], best = Infinity;
+  for (let index = 0; index < turn; index++) {
+    const a = outbound[index], b = outbound[index + 1], dx = b.x - a.x, dy = b.y - a.y;
+    const t = Math.max(0, Math.min(1, ((from.x - a.x) * dx + (from.y - a.y) * dy) / Math.max(.001, dx * dx + dy * dy)));
+    const point = { x: a.x + t * dx, y: a.y + t * dy };
+    const distance = Math.hypot(point.x - from.x, point.y - from.y);
+    if (distance < best) { best = distance; nearest = index; projected = point; }
+  }
+  const home = shortest('V:1810', 'B:' + stand, new Map(), new Set(['S:1880|V:1810', 'S1|V:1880']));
+  return [from, projected, ...outbound.slice(nearest + 1, turn + 1), ...RETURN_1A.slice(1), ...home.points.slice(1)];
 }
 
 export function runwayEntryPath(): MapPoint[] {

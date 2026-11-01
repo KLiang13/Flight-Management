@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { runSimulation } from './runSimulation';
-import { applyWeatherPeriods, hasMissedCtotAt, weatherDclEvents, composeWeatherDclEvents, weatherStatus, departureStatusAt } from './weather';
+import { applyWeatherPeriods, hasMissedCtotAt, weatherDclEvents, composeWeatherDclEvents, weatherStatus, departureStatusAt, departureStandAt } from './weather';
 import { clearanceRequestTime, departureWaitMinutesAt } from './departureTiming';
 import { departurePosition } from '../map/playback';
 import { formatDclMessage, createDclEvents } from '../dcl/dclScenario';
@@ -14,7 +14,7 @@ const base = (startup: number, slot: number) => runSimulation([{
 describe('weather suspension rules', () => {
   it('TH1 counts 16 minutes at 13:46 against the old 13:30 tolerance end', () => {
     const planned = base(790, 800);
-    const recovered = applyWeatherPeriods([planned], [], [{ start: 793 * minute, end: 825 * minute }], '25L-25R').flights[0];
+    const recovered = applyWeatherPeriods([planned], [], [{ start: planned.runwayEntryStart - 1, end: 825 * minute }], '25L-25R').flights[0];
     const actual = { ...recovered, wheelsOff: 826 * minute };
     expect(recovered.weather!.heldAtStand).toBe(false);
     expect(recovered.weather!.returnStand).toBeNull();
@@ -98,7 +98,7 @@ describe('weather suspension rules', () => {
 describe('started aircraft CTOT status', () => {
   it('shows CTOT EXPIRED only after expiry and until a replacement is issued', () => {
     const planned = base(790, 800);
-    const recovered = applyWeatherPeriods([planned], [], [{ start: 793 * minute, end: 825 * minute }], '25L-25R').flights[0];
+    const recovered = applyWeatherPeriods([planned], [], [{ start: planned.runwayEntryStart - 1, end: 825 * minute }], '25L-25R').flights[0];
     expect(weatherStatus(recovered, 809 * minute)?.label).toBe('Chờ thời tiết tốt');
     expect(weatherStatus(recovered, 810 * minute)?.label).not.toBe('CTOT EXPIRED');
     expect(weatherStatus(recovered, 810 * minute + 1)?.label).toBe('CTOT EXPIRED');
@@ -122,7 +122,7 @@ describe('started aircraft CTOT status', () => {
 describe('S1 queue after weather recovery', () => {
   it('keeps three queued aircraft apart and enters 25L only at the revised entry time', () => {
     const planned = base(790, 800);
-    const recovered = applyWeatherPeriods([planned], [], [{ start: 793 * minute, end: 825 * minute }], '25L-25R').flights[0];
+    const recovered = applyWeatherPeriods([planned], [], [{ start: planned.runwayEntryStart - 1, end: 825 * minute }], '25L-25R').flights[0];
     const waitingAt = recovered.runwayEntryStart - 1000;
     const positions = [0, 1, 2].map(index =>
       departurePosition({ ...recovered, id: 'QUEUE-' + index }, waitingAt, index, '25L-25R'));
@@ -131,5 +131,59 @@ describe('S1 queue after weather recovery', () => {
     expect(departurePosition(recovered, recovered.runwayEntryStart + 1000, 0, '25L-25R').phase).toBe('vào đường băng 25L');
     expect(departurePosition(recovered, recovered.takeoffRollStart + 1000, 0, '25L-25R').phase).toBe('cất cánh 25L');
     expect(departurePosition(recovered, recovered.wheelsOff + 1000, 0, '25L-25R').phase).toBe('đã cất cánh 25L');
+  });
+});
+
+describe('stand retention on weather slot revisions', () => {
+  it('keeps an unstarted aircraft at its original stand after expiry and slot reissue', () => {
+    const planned = base(797, 807);
+    const periods = [{ start: 787 * minute, end: 850 * minute }];
+    const recovered = applyWeatherPeriods([planned], [], periods, '25L-25R').flights[0];
+    expect(recovered.weather!.returnStand).toBeNull();
+    expect(recovered.returnStart).toBeNull();
+    expect(recovered.returnEnd).toBeNull();
+    expect(recovered.reissuedTsat).not.toBeNull();
+    for (const time of [800, 840, 850]) {
+      expect(departureStandAt(recovered, time * minute)).toBe(planned.stand);
+    }
+    const duringRain = departurePosition(recovered, 840 * minute, 0, '25L-25R').point;
+    const afterRevision = departurePosition(recovered, recovered.reissuedTsat!, 0, '25L-25R').point;
+    expect(Math.hypot(duringRain.x - afterRevision.x, duringRain.y - afterRevision.y)).toBeLessThan(.01);
+  });
+  it('retains the actual stand when rain starts after an earlier return was completed', () => {
+    const planned = base(797, 807);
+    const returned = { ...planned, returnStand: '74', returnStart: 780 * minute,
+      returnEnd: 790 * minute, secondTaxiStart: 820 * minute };
+    expect(departureStandAt(returned, 785 * minute)).toBe(planned.stand);
+    expect(departureStandAt(returned, 795 * minute)).toBe('74');
+  });
+});
+
+describe('rain decision at the S1 lamp', () => {
+  it('starts returning immediately before CTOT expires and follows the 1A curve', () => {
+    const planned = base(790, 800);
+    const start = planned.taxiStart + 2 * minute;
+    const flight = applyWeatherPeriods([planned], [], [{ start, end: 825 * minute }], '25L-25R').flights[0];
+    expect(flight.weather!.passedWeatherPoint).toBe(false);
+    expect(flight.weather!.returnStart).toBe(start);
+    expect(flight.weather!.returnStart).toBeLessThan(flight.ctot + 10 * minute);
+    expect(flight.weather!.returnStand).not.toBeNull();
+    expect(flight.weather!.returnPath.some(point => point.x === 1880 && point.y === 495)).toBe(true);
+    expect(flight.weather!.returnPath.some(point => point.x === 1810 && point.y === 559)).toBe(true);
+    const before = departurePosition(planned, start, 0, '25L-25R').point;
+    const after = departurePosition(flight, start, 0, '25L-25R').point;
+    expect(Math.hypot(before.x - after.x, before.y - after.y)).toBeLessThan(.01);
+    expect(flight.reissuedTsat).toBeNull();
+    expect(Number.isFinite(flight.wheelsOff)).toBe(true);
+  });
+  it('continues to S1 after passing the lamp and waits until rain clears', () => {
+    const planned = base(790, 800);
+    const start = planned.taxiStart + planned.taxiMinutes * minute - 1;
+    const flight = applyWeatherPeriods([planned], [], [{ start, end: 825 * minute }], '25L-25R').flights[0];
+    expect(flight.weather!.passedWeatherPoint).toBe(true);
+    expect(flight.weather!.returnStand).toBeNull();
+    expect(flight.takeoffRollStart).toBeGreaterThanOrEqual(825 * minute);
+    expect(departurePosition(flight, 820 * minute, 0, '25L-25R').phase).toBe('chờ lượt vào 25L');
+    expect(departurePosition(flight, flight.wheelsOff + 1, 0, '25L-25R').phase).toBe('đã cất cánh 25L');
   });
 });

@@ -2,17 +2,18 @@ import type { TimelineItem } from './runSimulation';
 import { RUNWAY_MOVEMENT_MS, TAKEOFF_ROLL_MS } from './movementPhysics';
 import type { ArrivalTimelineItem } from './arrivals';
 import { departurePosition } from '../map/playback';
-import { getNearestReturnStand, getTaxiRoutePoints, type MapPoint } from '../map/airfieldGeometry';
+import { getNearestReturnStand, getStandPoint, getTaxiRoutePoints, type MapPoint } from '../map/airfieldGeometry';
 import type { DclEvent } from '../dcl/dclScenario';
 import { departureTsatAt, departureWaitMinutesAt } from './departureTiming';
 import { releaseTakeoffRoll, arrivalDelayForBookedRolls, reserveCrossingsBeforeDeparture } from './runwayCoordination';
-import { distanceAlongPathToPoint } from '../map/surfaceGraph';
+import { CTOT_COMMIT_POINT, weatherReturnVia1A } from '../map/surfaceGraph';
 
 const MINUTE = 60_000;
 const MOVEMENT = RUNWAY_MOVEMENT_MS;
 export type WeatherPeriod = { start: number; end: number | null };
 export type WeatherDepartureState = WeatherPeriod & {
   previous: TimelineItem; heldAtStand: boolean; groundStand: string;
+  atStand?: boolean; passedWeatherPoint?: boolean; outboundRoute?: MapPoint[];
   missedAt: number | null; returnStart: number | null; returnEnd: number | null;
   returnStand: string | null; returnPath: MapPoint[];
   resumedTaxiStart: number; groundReadyAt: number; revisionAt: number | null;
@@ -21,24 +22,6 @@ export type WeatherArrivalState = WeatherPeriod & { previous: ArrivalTimelineIte
 
 function pathLength(path: MapPoint[]): number {
   return path.slice(1).reduce((sum, point, index) => sum + Math.hypot(point.x - path[index].x, point.y - path[index].y), 0);
-}
-
-// Join the reverse taxi route at the nearest point, preserving the aircraft's
-// actual position when its slot expires instead of moving it back to S1.
-function returnPath(from: MapPoint, stand: string, runway: string): MapPoint[] {
-  const route = [...getTaxiRoutePoints(stand, runway)].reverse();
-  let nearest = 0;
-  let projected = route[0];
-  let distance = Infinity;
-  for (let index = 0; index < route.length - 1; index += 1) {
-    const a = route[index], b = route[index + 1];
-    const length = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
-    const t = length ? Math.max(0, Math.min(1, ((from.x - a.x) * (b.x - a.x) + (from.y - a.y) * (b.y - a.y)) / length)) : 0;
-    const point = { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
-    const candidate = Math.hypot(from.x - point.x, from.y - point.y);
-    if (candidate < distance) { distance = candidate; nearest = index; projected = point; }
-  }
-  return [from, projected, ...route.slice(nearest + 1)];
 }
 
 type Reservation = { stand: string; from: number; until: number; id: string };
@@ -77,49 +60,49 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
       || Boolean(old?.heldAtStand && old.resumedTaxiStart >= period.start);
     const groundStand = waitingAfterReturn ? previous.returnStand! : old?.heldAtStand
       ? old.returnStand ?? old.groundStand : previous.stand;
-    const resumedTaxiStart = heldAtStand ? Math.max(previous.secondTaxiStart ?? previous.taxiStart, release) : previous.taxiStart;
-    const groundReadyAt = heldAtStand ? resumedTaxiStart + previous.taxiMinutes * MINUTE
+    const position = departurePosition(previous, period.start, 0, runway).point;
+    const standPoint = getStandPoint(groundStand);
+    const atStand = heldAtStand || Math.hypot(position.x - standPoint.x, position.y - standPoint.y) < 2;
+    const passedWeatherPoint = position.x >= CTOT_COMMIT_POINT.x && position.y <= CTOT_COMMIT_POINT.y + 3;
+    const outboundRoute = previous.surfacePlan?.legs.find(leg => leg.start <= period.start && period.start < leg.end && leg.points.length > 1)?.points
+      ?? getTaxiRoutePoints(groundStand, runway);
+    const resumedTaxiStart = atStand ? Math.max(previous.secondTaxiStart ?? previous.taxiStart, release) : previous.taxiStart;
+    const groundReadyAt = atStand ? resumedTaxiStart + previous.taxiMinutes * MINUTE
       : Math.max(previous.taxiStart + previous.taxiMinutes * MINUTE,
         previous.secondTaxiStart === null ? -Infinity : previous.secondTaxiStart + previous.taxiMinutes * MINUTE);
-    return { ...period, previous, heldAtStand, groundStand, resumedTaxiStart, groundReadyAt,
+    return { ...period, previous, heldAtStand, groundStand, atStand, passedWeatherPoint, outboundRoute, resumedTaxiStart, groundReadyAt,
       missedAt: null, returnStart: null, returnEnd: null, returnStand: null, returnPath: [], revisionAt: period.end };
   }
   function divert(state: WeatherDepartureState): WeatherDepartureState {
     const previous = state.previous;
     const missedAt = Math.max(period.start, activeSlot(previous) + 10 * MINUTE + 1);
-    const outboundRoute = getTaxiRoutePoints(previous.stand, 'S1');
-    const commitDistance = pathLength(outboundRoute) > 0
-      ? distanceAlongPathToPoint(outboundRoute) : null;
-    const commitAt = commitDistance === null ? Infinity
-      : previous.taxiStart + previous.taxiMinutes * MINUTE * commitDistance / pathLength(outboundRoute);
-    if (!state.heldAtStand && Math.min(commitAt, previous.taxiStart + previous.taxiMinutes * MINUTE) <= missedAt) {
-      return { ...state, missedAt, returnStart: null, returnEnd: null, returnStand: null, returnPath: [],
-        resumedTaxiStart: previous.taxiStart, groundReadyAt: previous.taxiStart + previous.taxiMinutes * MINUTE,
-        revisionAt: period.end };
+    if (state.heldAtStand || state.atStand) return { ...state, missedAt: state.heldAtStand ? null : missedAt };
+    if (state.returnStand || state.passedWeatherPoint) {
+      return { ...state, missedAt, revisionAt: state.returnEnd === null ? period.end : state.revisionAt };
     }
-    let returnStart = missedAt;
+    let returnStart = period.start;
     let returnEnd: number | null = missedAt;
     let returnStand: string | null = state.groundStand;
     let route: MapPoint[] = [];
     if (!state.heldAtStand) {
       returnStand = null;
-      const times = [missedAt, ...reservations.filter((item) => item.until > missedAt && Number.isFinite(item.until)).map((item) => item.until)]
+      const times = [period.start, ...reservations.filter((item) => item.until > period.start && Number.isFinite(item.until)).map((item) => item.until)]
         .sort((a, b) => a - b);
       for (const time of times) {
         const occupied = new Set(reservations.filter((item) => item.id !== previous.id && item.from <= time && item.until > time).map((item) => item.stand));
-        const candidate = getNearestReturnStand(previous.stand, occupied, previous.wakeCategory);
+        const candidate = getNearestReturnStand(state.groundStand, occupied, previous.wakeCategory, departurePosition(previous, period.start, 0, runway).point);
         if (!occupied.has(candidate)) { returnStart = time; returnStand = candidate; break; }
       }
       returnEnd = null;
       if (returnStand) {
-        const point = departurePosition(previous, Math.min(returnStart, previous.runwayEntryStart - 1), 0, runway).point;
-        route = returnPath(point, returnStand, runway);
+        const point = departurePosition(previous, period.start, 0, runway).point;
+        route = weatherReturnVia1A(point, state.outboundRoute ?? getTaxiRoutePoints(state.groundStand, runway), returnStand);
         returnEnd = returnStart + Math.max(MINUTE, pathLength(route) * (3059 / 1750) / 1852 / 20 * 3_600_000);
       }
     }
     const resumedTaxiStart = Math.max(release, (returnEnd ?? Infinity) + MOVEMENT);
     if (returnStand) reservations.push({ stand: returnStand, from: returnStart, until: resumedTaxiStart, id: previous.id });
-    return { ...state, missedAt, returnStart, returnEnd, returnStand, returnPath: route, resumedTaxiStart,
+    return { ...state, missedAt: resumedTaxiStart + previous.taxiMinutes * MINUTE + MOVEMENT > activeSlot(previous) + 10 * MINUTE ? missedAt : null, returnStart, returnEnd, returnStand, returnPath: route, resumedTaxiStart,
       groundReadyAt: resumedTaxiStart + previous.taxiMinutes * MINUTE,
       revisionAt: period.end === null || returnEnd === null ? null : Math.max(period.end, returnEnd) };
   }
@@ -141,8 +124,9 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
   const committed = departures.filter((flight) => flight.takeoffRollStart < period.start);
   const pending = departures.filter((flight) => flight.takeoffRollStart >= period.start).map((previous) => {
     let state = stateFor(previous);
+    if (!state.heldAtStand && !state.atStand && !state.passedWeatherPoint) state = divert(state);
     const earliest = Math.max(previous.wheelsOff, release + MOVEMENT, state.groundReadyAt + MOVEMENT);
-    if (earliest === previous.wheelsOff && (!state.heldAtStand || state.resumedTaxiStart === (previous.secondTaxiStart ?? previous.taxiStart))) return previous;
+    if (state.returnStart === null && earliest === previous.wheelsOff && (!state.heldAtStand || state.resumedTaxiStart === (previous.secondTaxiStart ?? previous.taxiStart))) return previous;
     if (!state.heldAtStand && earliest > activeSlot(previous) + 10 * MINUTE) state = divert(state);
     return withState(state, Math.max(earliest, state.groundReadyAt + MOVEMENT));
   });
@@ -164,7 +148,7 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
       taxiStarts.push(next);
       return next;
     }
-    const needsStartup = pending.filter((flight) => currentState(flight) && (currentState(flight)!.heldAtStand || currentState(flight)!.returnStand !== null))
+    const needsStartup = pending.filter((flight) => currentState(flight) && (currentState(flight)!.heldAtStand || currentState(flight)!.atStand || currentState(flight)!.returnStand !== null))
       .sort((a, b) => a.weather!.resumedTaxiStart - b.weather!.resumedTaxiStart
         || Number(a.weather!.missedAt !== null) - Number(b.weather!.missedAt !== null) || a.order - b.order);
     for (const flight of needsStartup) {
@@ -321,6 +305,19 @@ export function weatherStatus(flight: TimelineItem, time: number): { label: stri
       : missed ? 'Không tuân thủ CTOT' : weather.heldAtStand ? 'Đã cấp TSAT mới' : 'Đã cấp CTOT mới',
     missed, pending, tsat: pending && weather.heldAtStand ? null : departureTsatAt(flight, time),
   };
+}
+
+/** A slot revision does not assign a stand; only an actual return changes it. */
+export function departureStandAt(flight: TimelineItem, time: number): string {
+  if (flight.weather) {
+    const state = flight.weather;
+    if (time < state.start) return departureStandAt(state.previous, time);
+    if (state.returnStand && state.returnEnd !== null && time >= state.returnEnd) return state.returnStand;
+    if (state.heldAtStand) return state.groundStand;
+    return departureStandAt(state.previous, time);
+  }
+  return flight.returnStand && flight.returnEnd !== null && time >= flight.returnEnd
+    ? flight.returnStand : flight.stand;
 }
 
 export function departureStatusAt(flight: TimelineItem, time: number, runway: string): string {
