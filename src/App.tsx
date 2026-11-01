@@ -28,7 +28,7 @@ const SAMPLE_FILES = [
 const RUNWAYS = [
   { id: '25L-25R', label: '25L / 25R' },
 ];
-const speeds = [1, 10, 30, 60];
+const speeds = [1, 5, 10, 30, 60];
 const timeFormat = new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const shortTimeFormat = new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' });
 const numberFormat = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 });
