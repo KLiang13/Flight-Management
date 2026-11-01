@@ -114,3 +114,18 @@ describe('started aircraft CTOT status', () => {
     expect(weatherStatus(held, 850 * minute)?.label).toBe('Đã cấp TSAT mới');
   });
 });
+
+describe('S1 queue after weather recovery', () => {
+  it('keeps three queued aircraft apart and enters 25L only at the revised entry time', () => {
+    const planned = base(790, 800);
+    const recovered = applyWeatherPeriods([planned], [], [{ start: 793 * minute, end: 825 * minute }], '25L-25R').flights[0];
+    const waitingAt = recovered.runwayEntryStart - 1000;
+    const positions = [0, 1, 2].map(index =>
+      departurePosition({ ...recovered, id: 'QUEUE-' + index }, waitingAt, index, '25L-25R'));
+    expect(new Set(positions.map(position => position.point.x + ':' + position.point.y)).size).toBe(3);
+    expect(positions.every(position => position.phase === 'chờ lượt vào 25L')).toBe(true);
+    expect(departurePosition(recovered, recovered.runwayEntryStart + 1000, 0, '25L-25R').phase).toBe('vào đường băng 25L');
+    expect(departurePosition(recovered, recovered.takeoffRollStart + 1000, 0, '25L-25R').phase).toBe('cất cánh 25L');
+    expect(departurePosition(recovered, recovered.wheelsOff + 1000, 0, '25L-25R').phase).toBe('đã cất cánh 25L');
+  });
+});
