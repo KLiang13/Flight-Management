@@ -109,7 +109,7 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
     const previous = input.previous;
     const deadline = previous.ctot - previous.taxiMinutes * MINUTE;
     const blocked = input.blockedAt !== undefined || (input.end !== null && (
-      (input.heldAtStand && input.resumedTaxiStart >= deadline) || (!input.passedWeatherPoint && forecast > previous.ctot + 10 * MINUTE)));
+      (input.heldAtStand && input.end >= deadline) || (!input.passedWeatherPoint && forecast > previous.ctot + 10 * MINUTE)));
     const state: WeatherDepartureState = { ...input,
       blockedAt: blocked ? input.blockedAt ?? input.end ?? input.start : undefined,
       awaitTsat: blocked && input.heldAtStand,
@@ -133,6 +133,9 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
   let pending = departures.filter((flight) => flight.takeoffRollStart >= period.start).map((previous) => {
     if (previous.weather?.blockedAt !== undefined && !(previous.weather.passedWeatherPoint && !previous.weather.returnStand)) return previous;
     let state = stateFor(previous);
+    // A shower that clears before the planned startup does not revise that clearance.
+    if (state.heldAtStand && state.resumedTaxiStart === (previous.secondTaxiStart ?? previous.taxiStart)
+      && state.resumedTaxiStart >= release) return previous;
     if (!state.heldAtStand && !state.atStand && !state.passedWeatherPoint) state = divert(state);
     const earliest = Math.max(previousTakeoff(previous), release + MOVEMENT, state.groundReadyAt + MOVEMENT);
     if (state.returnStart === null && earliest === previous.wheelsOff && (!state.heldAtStand || state.resumedTaxiStart === (previous.secondTaxiStart ?? previous.taxiStart))) return previous;
@@ -242,9 +245,11 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
         continue;
       }
       if (state || wheelsOff > flight.wheelsOff) flight = withState(state ?? stateFor(previous), wheelsOff);
-      for (const id of crossingPriority.served) servedCrossings.add(id);
       if (flight.weather?.blockedAt !== undefined) suspended.push(flight);
-      else { completed.push(flight); available = wheelsOff + MOVEMENT; }
+      else {
+        for (const id of crossingPriority.served) servedCrossings.add(id);
+        completed.push(flight); available = wheelsOff + MOVEMENT;
+      }
     }
     flights = [...completed, ...suspended];
   }
@@ -384,7 +389,7 @@ function reserveWeatherPlan(flights: TimelineItem[], arrivals: ArrivalTimelineIt
   const newlyExpired = flights.filter(flight => {
     const movement = reserved.get(flight.id), state = flight.weather;
     return movement && state && !state.passedWeatherPoint && state.end !== null && state.blockedAt === undefined
-      && ((state.heldAtStand && state.resumedTaxiStart + movement.delay >= flight.ctot - flight.taxiMinutes * MINUTE)
+      && ((state.heldAtStand && state.end >= flight.ctot - flight.taxiMinutes * MINUTE)
         || flight.wheelsOff + movement.delay > flight.ctot + 10 * MINUTE);
   });
   if (newlyExpired.length) {

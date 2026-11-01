@@ -13,6 +13,24 @@ import { scheduleArrivals } from './arrivals';
 import { computePlan } from './planning';
 
 describe('weather route reservations', () => {
+  it('does not suspend the six future departures after rain from 13:13 to 13:26', async () => {
+    const bytes = readFileSync('public/samples/chuyen-de.xlsx');
+    const file = new File([bytes], 'Chuyên đề.xlsx');
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => Uint8Array.from(bytes).buffer });
+    const workbook = await readFlightFile(file);
+    const physical = computePlan({ type: 'day', rows: workbook.enrichedRows.filter(isDepartureFromTsn), arrivals: workbook.enrichedRows.filter(isArrivalAtTsn), runway: '25L-25R' });
+    const start = new Date('2026-10-01T13:13:00').getTime();
+    const end = new Date('2026-10-01T13:26:00').getTime();
+    const plan = applyWeatherPeriods(physical.flights, physical.arrivals, [{ start, end }], '25L-25R');
+    for (const callsign of ['VJC362', 'CSN374', 'PIC6160', 'SPQ1985', 'MAS767', 'SIA183']) {
+      const flight = plan.flights.find(item => item.callsign === callsign)!;
+      expect(flight, callsign).toBeDefined();
+      expect(flight.weather?.blockedAt, callsign).toBeUndefined();
+      expect(Number.isFinite(flight.wheelsOff), callsign).toBe(true);
+      expect(flight.wheelsOff, callsign).toBeLessThanOrEqual(flight.ctot + 10 * 60_000);
+      expect(flight.reissuedCtot, callsign).toBeNull();
+    }
+  }, 30_000);
   it('finishes taxiing to S1 during open rain after passing the lamp', () => {
     const baseline = planSurfaceTraffic(runSimulation([{ id: 'PASSED', callsign: 'PASSED', aircraftType: 'A321',
       wakeCategory: 'M', stand: '71', readyAt: 790 * 60_000, ctot: 810 * 60_000, taxiMinutes: 8, row: {} }]).flights, [], '25L-25R').flights;

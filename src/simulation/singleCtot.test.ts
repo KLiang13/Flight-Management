@@ -9,6 +9,14 @@ const base = () => runSimulation([{ id: 'D', callsign: 'D', aircraftType: 'A321'
   readyAt: 100 * minute, ctot: 120 * minute, taxiMinutes: 8, row: {} }]).flights[0];
 
 describe('single CTOT operating policy', () => {
+  it('keeps future departures valid when rain ends before their startup deadline', () => {
+    const original = { ...base(), ctot: 105 * minute, wheelsOff: 110 * minute };
+    expect(original.wheelsOff).toBeLessThanOrEqual(original.ctot + 10 * minute);
+    const flight = applyWeatherPeriods([original], [], [{ start: 60 * minute, end: 73 * minute }], '25L-25R').flights[0];
+    expect(Number.isFinite(flight.wheelsOff)).toBe(true);
+    expect(flight.weather?.blockedAt).toBeUndefined();
+    expect(flight.reissuedCtot).toBeNull();
+  });
   it('releases a waiting S1 aircraft after late recovery without changing either clock', () => {
     const original = base();
     const periods = [{ start: original.runwayEntryStart - 1, end: 150 * minute }];
