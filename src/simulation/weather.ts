@@ -353,17 +353,17 @@ export function weatherDclEvents(flights: TimelineItem[], periods: WeatherPeriod
       if (state?.missedAt !== null && state?.missedAt !== undefined) events.push({
         id: `${flight.id}-weather-${period.start}-expired`, flightId: flight.id, time: state.missedAt,
         callsign: flight.callsign, direction: 'Hệ thống → Tổ lái',
-        message: `FSM ${messageStamp(state.missedAt)} VVTS ${flight.callsign} KHÔNG TUÂN THỦ CTOT`, status: 'OK',
+        message: `FSM ${messageStamp(state.missedAt)} VVTS ${flight.callsign} CTOT EXPIRED`, status: 'OK',
       });
       const revisionAt = state ? state.revisionAt : period.end;
       if (revisionAt === null || !Number.isFinite(current.wheelsOff)) continue;
       const clearanceAt = Math.max(revisionAt, requestedAt + 15_000);
       if (periods.some(later => later.start > period.start && clearanceAt >= later.start && clearanceAt < (later.end ?? Infinity))) continue;
       const startup = departureTsatAt(current, clearanceAt);
-      const slot = departureCtotAt(current, clearanceAt);
       const revised = state?.heldAtStand && current.reissuedTsat !== null ? 'TSAT' : 'CTOT';
       const revisionLabel = state && (revised === 'TSAT' ? current.reissuedTsat !== null : current.reissuedCtot !== null) ? ' REVISED' : '';
-      const value = revised === 'TSAT' ? startup : slot;
+      if (revised === 'CTOT') continue;
+      const value = startup;
       const stamp = new Date(value).toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit' }).replace(':', '');
       events.push({
         id: `${flight.id}-weather-${period.start}-cld`, flightId: flight.id, time: clearanceAt,

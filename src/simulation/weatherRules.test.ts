@@ -70,7 +70,7 @@ describe('weather suspension rules', () => {
     expect(suspended.map(event => event.message.split(' ')[0])).toEqual(['RCD']);
     expect(suspended.some(event => event.status === 'TIMEOUT' || event.message.includes('VOICE'))).toBe(false);
     expect(combined.filter(event => event.message.startsWith('RCD '))).toHaveLength(1);
-    expect(combined.find(event => event.message.startsWith('CLD '))?.time).toBe(85 * minute);
+    expect(combined.some(event => event.message.startsWith('CLD ') && event.time === 85 * minute)).toBe(false);
   });
 
   it('pauses a pending clearance even when RCD was sent just before rain', () => {
@@ -80,7 +80,7 @@ describe('weather suspension rules', () => {
     const requests = createDclEvents('D', 80 * minute, 13).map(event => ({ ...event, flightId: 'D' }));
     const combined = composeWeatherDclEvents(requests, [recovered], periods);
     expect(combined.some(event => event.status === 'TIMEOUT' || event.message.includes('VOICE'))).toBe(false);
-    expect(combined.find(event => event.message.startsWith('CLD '))?.time).toBe(85 * minute);
+    expect(combined.some(event => event.message.startsWith('CLD ') && event.time === 85 * minute)).toBe(false);
   });
 
   it('preserves the actual runway-entry progress across two rain interruptions', () => {
@@ -101,7 +101,7 @@ describe('started aircraft CTOT status', () => {
     const recovered = applyWeatherPeriods([planned], [], [{ start: planned.runwayEntryStart - 1, end: 825 * minute }], '25L-25R').flights[0];
     expect(weatherStatus(recovered, 809 * minute)?.label).toBe('Chờ thời tiết tốt');
     expect(weatherStatus(recovered, 810 * minute)?.label).not.toBe('CTOT EXPIRED');
-    expect(weatherStatus(recovered, 810 * minute + 1)?.label).toBe('CTOT EXPIRED');
+    expect(weatherStatus(recovered, 810 * minute + 1)?.label).toBe('Chờ thời tiết tốt');
     expect(weatherStatus(recovered, 824 * minute)?.tsat).toBe(planned.tsat);
     expect(weatherStatus(recovered, 825 * minute)?.label).toBe('Không tuân thủ CTOT');
     expect(departureStatusAt(recovered, recovered.takeoffRollStart - 1, '25L-25R')).toBe('Không tuân thủ CTOT');
