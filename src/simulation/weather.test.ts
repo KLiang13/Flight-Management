@@ -87,9 +87,9 @@ describe('manual adverse weather', () => {
     const valid = result.flights.find((item) => item.id === 'VALID')!;
     const expired = result.flights.find((item) => item.id === 'EXPIRED')!;
     expect(valid.weather?.missedAt).toBeNull();
-    expect(valid.wheelsOff).toBe(Infinity);
+    expect(Number.isFinite(valid.wheelsOff)).toBe(true);
     expect(expired.weather!.returnStand).toBeNull();
-    expect(expired.wheelsOff).toBe(Infinity);
+    expect(expired.wheelsOff).toBeLessThan(valid.wheelsOff);
   });
 
   it('retains Medium aircraft needed between Heavy departures after rain', () => {
@@ -174,7 +174,7 @@ describe('weather recovery with bundled workbooks', () => {
       if (item.reissuedTsat !== null) {
         expect(item.reissuedCtot).toBeNull();
         expect(item.wheelsOff).toBeGreaterThanOrEqual(item.reissuedTsat + item.taxiMinutes * minute);
-      } else if (!item.weather?.returnedAfterStartup) {
+      } else if (!item.weather?.returnedAfterStartup && !item.weather?.passedWeatherPoint) {
         const slot = item.reissuedCtot ?? item.ctot;
         expect(item.wheelsOff).toBeGreaterThanOrEqual(slot - 5 * minute);
         expect(item.wheelsOff).toBeLessThanOrEqual(slot + 10 * minute);

@@ -9,6 +9,29 @@ const base = () => runSimulation([{ id: 'D', callsign: 'D', aircraftType: 'A321'
   readyAt: 100 * minute, ctot: 120 * minute, taxiMinutes: 8, row: {} }]).flights[0];
 
 describe('single CTOT operating policy', () => {
+  it('releases a waiting S1 aircraft after late recovery without changing either clock', () => {
+    const original = base();
+    const periods = [{ start: original.runwayEntryStart - 1, end: 150 * minute }];
+    const flight = applyWeatherPeriods([original], [], periods, '25L-25R').flights[0];
+    expect(flight.weather!.passedWeatherPoint).toBe(true);
+    expect(Number.isFinite(flight.wheelsOff)).toBe(true);
+    expect(flight.takeoffRollStart).toBeGreaterThanOrEqual(150 * minute);
+    expect(flight.reissuedCtot).toBeNull();
+    expect(flight.reissuedTsat).toBeNull();
+    expect(departureCtotAt(flight, flight.wheelsOff)).toBe(original.ctot);
+    expect(departureTsatAt(flight, flight.wheelsOff)).toBe(original.tsat);
+    expect(departurePosition(flight, flight.takeoffRollStart + 1000, 0, '25L-25R').phase).toBe('cất cánh 25L');
+  });
+  it('can release a previously suspended S1 aircraft through a later weather recovery', () => {
+    const original = base();
+    const waiting = applyWeatherPeriods([original], [], [{ start: original.runwayEntryStart - 1, end: null }], '25L-25R').flights[0];
+    const suspended = { ...waiting, weather: { ...waiting.weather!, blockedAt: 140 * minute } };
+    const flight = applyWeatherPeriods([suspended], [], [{ start: 145 * minute, end: 150 * minute }], '25L-25R').flights[0];
+    expect(Number.isFinite(flight.wheelsOff)).toBe(true);
+    expect(flight.takeoffRollStart).toBeGreaterThanOrEqual(150 * minute);
+    expect(flight.reissuedCtot).toBeNull();
+    expect(flight.reissuedTsat).toBeNull();
+  });
   it('sends an awaiting-TSAT message when a baseline-suspended request falls in rain', () => {
     const flight = enforceSingleCtot([{ ...base(), missedCtot: true }])[0];
     const periods = [{ start: 70 * minute, end: 140 * minute }];

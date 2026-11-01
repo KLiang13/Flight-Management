@@ -127,8 +127,8 @@ describe('started aircraft CTOT status', () => {
     expect(weatherStatus(recovered, 810 * minute + 1)?.label).toBe('Không tuân thủ CTOT');
     expect(weatherStatus(recovered, 824 * minute)?.tsat).toBe(planned.tsat);
     expect(weatherStatus(recovered, 825 * minute)?.label).toBe('Không tuân thủ CTOT');
-    expect(recovered.wheelsOff).toBe(Infinity);
-    expect(departureStatusAt(recovered, 900 * minute, '25L-25R')).toBe('Không tuân thủ CTOT');
+    expect(Number.isFinite(recovered.wheelsOff)).toBe(true);
+    expect(departureStatusAt(recovered, 900 * minute, '25L-25R')).toBe('Cất cánh');
     expect(recovered.reissuedTsat).toBeNull();
   });
   it('does not label an unstarted aircraft CTOT EXPIRED during startup suspension', () => {
@@ -149,8 +149,9 @@ describe('S1 queue after weather recovery', () => {
       departurePosition({ ...recovered, id: 'QUEUE-' + index }, waitingAt, index, '25L-25R'));
     expect(new Set(positions.map(position => position.point.x + ':' + position.point.y)).size).toBe(3);
     expect(positions.every(position => position.phase === 'chờ lượt vào 25L')).toBe(true);
-    expect(recovered.wheelsOff).toBe(Infinity);
-    expect(departurePosition(recovered, 900 * minute, 0, '25L-25R').phase).toBe('chờ lượt vào 25L');
+    expect(Number.isFinite(recovered.wheelsOff)).toBe(true);
+    expect(departurePosition(recovered, recovered.runwayEntryStart + 1000, 0, '25L-25R').phase).toBe('vào đường băng 25L');
+    expect(departurePosition(recovered, recovered.takeoffRollStart + 1000, 0, '25L-25R').phase).toBe('cất cánh 25L');
   });
 });
 

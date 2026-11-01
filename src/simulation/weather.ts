@@ -49,6 +49,8 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
   });
   const currentState = (flight: TimelineItem) => flight.weather?.start === period.start ? flight.weather : undefined;
   const activeSlot = (flight: TimelineItem) => departureCtotAt(flight, period.start);
+  const previousTakeoff = (flight: TimelineItem) => Number.isFinite(flight.wheelsOff) ? flight.wheelsOff
+    : flight.weather?.passedWeatherPoint && !flight.weather.returnStand ? -Infinity : Infinity;
   function stateFor(previous: TimelineItem): WeatherDepartureState {
     const old = previous.weather;
     const waitingAfterReturn = previous.returnEnd !== null && previous.returnEnd <= period.start
@@ -107,7 +109,7 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
     const previous = input.previous;
     const deadline = previous.ctot - previous.taxiMinutes * MINUTE;
     const blocked = input.blockedAt !== undefined || (input.end !== null && (
-      (input.heldAtStand && input.resumedTaxiStart >= deadline) || forecast > previous.ctot + 10 * MINUTE));
+      (input.heldAtStand && input.resumedTaxiStart >= deadline) || (!input.passedWeatherPoint && forecast > previous.ctot + 10 * MINUTE)));
     const state: WeatherDepartureState = { ...input,
       blockedAt: blocked ? input.blockedAt ?? input.end ?? input.start : undefined,
       awaitTsat: blocked && input.heldAtStand,
@@ -118,7 +120,7 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
     const wheelsOff = blocked ? Infinity : forecast;
     const result: TimelineItem = { ...previous, weather: state, wheelsOff,
       runwayEntryStart: wheelsOff - MOVEMENT, takeoffRollStart: wheelsOff - TAKEOFF_ROLL_MS,
-      missedCtot: previous.missedCtot || blocked,
+      missedCtot: previous.missedCtot || blocked || forecast > previous.ctot + 10 * MINUTE,
       returnStart: state.returnStart, returnEnd: state.returnEnd, returnStand: state.returnStand,
       secondTaxiStart: state.resumedTaxiStart, reissuedCtot: null,
       reissuedTsat: !blocked && state.heldAtStand && state.end !== null
@@ -129,10 +131,10 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
   }
   const committed = departures.filter((flight) => flight.takeoffRollStart < period.start);
   let pending = departures.filter((flight) => flight.takeoffRollStart >= period.start).map((previous) => {
-    if (previous.weather?.blockedAt !== undefined) return previous;
+    if (previous.weather?.blockedAt !== undefined && !(previous.weather.passedWeatherPoint && !previous.weather.returnStand)) return previous;
     let state = stateFor(previous);
     if (!state.heldAtStand && !state.atStand && !state.passedWeatherPoint) state = divert(state);
-    const earliest = Math.max(previous.wheelsOff, release + MOVEMENT, state.groundReadyAt + MOVEMENT);
+    const earliest = Math.max(previousTakeoff(previous), release + MOVEMENT, state.groundReadyAt + MOVEMENT);
     if (state.returnStart === null && earliest === previous.wheelsOff && (!state.heldAtStand || state.resumedTaxiStart === (previous.secondTaxiStart ?? previous.taxiStart))) return previous;
     if (!state.heldAtStand && earliest > activeSlot(previous) + 10 * MINUTE) state = divert(state);
     return withState(state, Math.max(earliest, state.groundReadyAt + MOVEMENT));
@@ -190,7 +192,7 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
     let available = completed.at(-1)?.wheelsOff ?? -Infinity;
     if (Number.isFinite(available)) available += MOVEMENT;
     const earliest = (flight: TimelineItem) => currentState(flight)
-      ? Math.max(currentState(flight)!.previous.wheelsOff, release + MOVEMENT, currentState(flight)!.groundReadyAt + MOVEMENT)
+      ? Math.max(previousTakeoff(currentState(flight)!.previous), release + MOVEMENT, currentState(flight)!.groundReadyAt + MOVEMENT)
       : flight.wheelsOff;
     while (pending.length) {
       const expired = (flight: TimelineItem) => Boolean(currentState(flight)?.returnedAfterStartup || currentState(flight)?.returnStand)
@@ -381,7 +383,7 @@ function reserveWeatherPlan(flights: TimelineItem[], arrivals: ArrivalTimelineIt
   }
   const newlyExpired = flights.filter(flight => {
     const movement = reserved.get(flight.id), state = flight.weather;
-    return movement && state && state.end !== null && state.blockedAt === undefined
+    return movement && state && !state.passedWeatherPoint && state.end !== null && state.blockedAt === undefined
       && ((state.heldAtStand && state.resumedTaxiStart + movement.delay >= flight.ctot - flight.taxiMinutes * MINUTE)
         || flight.wheelsOff + movement.delay > flight.ctot + 10 * MINUTE);
   });
