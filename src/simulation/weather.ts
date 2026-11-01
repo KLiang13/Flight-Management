@@ -499,11 +499,14 @@ export function weatherStatus(flight: TimelineItem, time: number): { label: stri
   if (time < weather.start) return weatherStatus(weather.previous, time);
   const missed = hasMissedCtotAt(flight, time);
   const pending = weather.revisionAt === null || time < weather.revisionAt;
+  const issuedTsat = departureTsatAt(flight, time);
+  const awaitingTsat = weather.heldAtStand && !weather.normalSuspension
+    && time >= issuedTsat && (pending || weather.awaitTsat);
   return {
     label: missed ? 'Không tuân thủ CTOT' : pending
       ? weather.normalSuspension ? 'Chờ khởi hành' : 'Chờ thời tiết tốt'
       : flight.reissuedTsat !== null ? 'Đã cấp TSAT mới' : flight.reissuedCtot !== null ? 'Đã cấp CTOT mới' : 'Chờ khởi hành',
-    missed, pending, tsat: pending && weather.heldAtStand && !weather.normalSuspension ? null : departureTsatAt(flight, time),
+    missed, pending, tsat: awaitingTsat ? null : issuedTsat,
   };
 }
 

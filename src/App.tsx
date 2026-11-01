@@ -489,7 +489,7 @@ function App() {
               const missed = hasMissedCtotAt(flight, timeCursor);
               const revisedSlot = flight.reissuedTsat ?? flight.reissuedCtot;
               const awaitingWeatherTimes = badWeather && missed && timeCursor < flight.wheelsOff;
-              const tsat = weather?.pending && flight.weather?.heldAtStand && !flight.weather.normalSuspension ? null : departureTsatAt(flight, timeCursor);
+              const tsat = weather ? weather.tsat : departureTsatAt(flight, timeCursor);
               const status = badWeather && timeCursor < flight.takeoffRollStart ? missed ? 'Không tuân thủ CTOT' : 'Chờ thời tiết tốt' : departureStatusAt(flight, timeCursor, runway);
               return <tr key={flight.id} className={selectedFlight === flight.callsign ? 'selected-row' : ''} onClick={() => setSelectedFlight(flight.callsign)}>
                 <td className="order-cell">{flight.order.toString().padStart(2, '0')}</td>

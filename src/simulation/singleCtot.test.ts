@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { runSimulation } from './runSimulation';
-import { applyWeatherPeriods, enforceSingleCtot, weatherDclEvents } from './weather';
+import { applyWeatherPeriods, enforceSingleCtot, weatherDclEvents, weatherStatus } from './weather';
 import { departureCtotAt, departureTsatAt } from './departureTiming';
 import { departurePosition } from '../map/playback';
 
@@ -9,6 +9,19 @@ const base = () => runSimulation([{ id: 'D', callsign: 'D', aircraftType: 'A321'
   readyAt: 100 * minute, ctot: 120 * minute, taxiMinutes: 8, row: {} }]).flights[0];
 
 describe('single CTOT operating policy', () => {
+  it('shows a future issued TSAT during rain and awaits revision only once it is due', () => {
+    const original = base();
+    const flight = applyWeatherPeriods([original], [], [{ start: 90 * minute, end: null }], '25L-25R').flights[0];
+    expect(weatherStatus(flight, original.tsat - 1)!.tsat).toBe(original.tsat);
+    expect(weatherStatus(flight, original.tsat)!.tsat).toBeNull();
+  });
+  it('preserves future TSAT after recovery and shows awaiting for a blocked due startup', () => {
+    const original = base();
+    const future = applyWeatherPeriods([original], [], [{ start: 80 * minute, end: 90 * minute }], '25L-25R').flights[0];
+    expect(weatherStatus(future, 90 * minute)?.tsat ?? departureTsatAt(future, 90 * minute)).toBe(original.tsat);
+    const blocked = applyWeatherPeriods([original], [], [{ start: 95 * minute, end: 115 * minute }], '25L-25R').flights[0];
+    expect(weatherStatus(blocked, 115 * minute)!.tsat).toBeNull();
+  });
   it('keeps future departures valid when rain ends before their startup deadline', () => {
     const original = { ...base(), ctot: 105 * minute, wheelsOff: 110 * minute };
     expect(original.wheelsOff).toBeLessThanOrEqual(original.ctot + 10 * minute);
