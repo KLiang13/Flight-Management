@@ -109,7 +109,7 @@ Khi được cấp **Revised TSAT**, bộ đếm sử dụng mốc mới từ th
 
 ### Thời tiết xấu thủ công
 
-Tàu chưa khởi động chỉ được cấp TSAT mới khi thời tiết tốt lên **sớm hơn CTOT − thời gian lăn**. Thời gian lăn dùng quãng đường/tốc độ, với tốc độ lăn 20 KTS. Đây là mốc cho phép khởi hành bảo thủ của kịch bản. Nếu hết mưa đúng hoặc sau mốc đó, tàu ở nguyên stand, được ghi **Không tuân thủ CTOT** và nhận **CLD AWAIT NEW TSAT**; không có hành động tự cấp TSAT hoặc tự bay lại về sau. Nếu còn đủ điều kiện, CLD chứa **TSAT REVISED** mới. Tàu đã khởi động không nhận TSAT mới.
+Với tàu chưa khởi động, khi hết mưa mà TSAT cũ chưa đến thì giữ nguyên TSAT. Nếu TSAT đã đến, hệ thống xét **TSAT mới + thời gian lăn ≤ CTOT gốc + 10 phút**: còn kịp thì cấp TSAT mới và gửi **CLD TSAT REVISED**; bằng đúng mốc +10 phút vẫn được phép lăn. Nếu vượt mốc này, tàu ở nguyên stand, được ghi **Không tuân thủ CTOT** và nhận **CLD AWAIT NEW TSAT**; không có hành động tự cấp TSAT hoặc tự bay lại về sau. Thời gian lăn tính bằng quãng đường/tốc độ, với tốc độ lăn 20 KTS; thời gian chờ phân cách có thể làm lùi TSAT dự kiến. CTOT gốc không đổi. Tàu đã khởi động không nhận TSAT mới.
 
 1. Chạy lịch và phát lại đến thời điểm muốn tạo tình huống.
 2. Bật **Thời tiết xấu** để dừng cấp phép cất/hạ cánh mới. Tàu đến còn trên không và tiếp cận trong khoảng ngừng tiếp nhận được chuyển hướng sang sân bay khác, không quay lại trong ngày mô phỏng. Tàu đã chạm bánh tiếp tục thoát đường băng và về stand; các lượt tiếp cận bắt đầu sau khi thời tiết tốt có thể được tiếp nhận bình thường.

@@ -9,6 +9,18 @@ const base = () => runSimulation([{ id: 'D', callsign: 'D', aircraftType: 'A321'
   readyAt: 100 * minute, ctot: 120 * minute, taxiMinutes: 8, row: {} }]).flights[0];
 
 describe('single CTOT operating policy', () => {
+  it('allows revised startup after TSAT when taxi still fits CTOT plus ten minutes, including equality', () => {
+    const original = base();
+    for (const end of [115, 122]) {
+      const periods = [{ start: 95 * minute, end: end * minute }];
+      const flight = applyWeatherPeriods([original], [], periods, '25L-25R').flights[0];
+      expect(flight.reissuedTsat).toBe(end * minute);
+      expect(flight.weather?.blockedAt).toBeUndefined();
+      expect(Number.isFinite(flight.wheelsOff)).toBe(true);
+      expect(flight.reissuedCtot).toBeNull();
+      expect(weatherDclEvents([flight], periods).some(event => event.message.includes('TSAT REVISED'))).toBe(true);
+    }
+  });
   it('shows a future issued TSAT during rain and awaits revision only once it is due', () => {
     const original = base();
     const flight = applyWeatherPeriods([original], [], [{ start: 90 * minute, end: null }], '25L-25R').flights[0];
@@ -19,8 +31,8 @@ describe('single CTOT operating policy', () => {
     const original = base();
     const future = applyWeatherPeriods([original], [], [{ start: 80 * minute, end: 90 * minute }], '25L-25R').flights[0];
     expect(weatherStatus(future, 90 * minute)?.tsat ?? departureTsatAt(future, 90 * minute)).toBe(original.tsat);
-    const blocked = applyWeatherPeriods([original], [], [{ start: 95 * minute, end: 115 * minute }], '25L-25R').flights[0];
-    expect(weatherStatus(blocked, 115 * minute)!.tsat).toBeNull();
+    const blocked = applyWeatherPeriods([original], [], [{ start: 95 * minute, end: 125 * minute }], '25L-25R').flights[0];
+    expect(weatherStatus(blocked, 125 * minute)!.tsat).toBeNull();
   });
   it('keeps future departures valid when rain ends before their startup deadline', () => {
     const original = { ...base(), ctot: 105 * minute, wheelsOff: 110 * minute };
@@ -69,9 +81,9 @@ describe('single CTOT operating policy', () => {
     expect(departureCtotAt(flight, flight.wheelsOff)).toBe(original.ctot);
     expect(weatherDclEvents([flight], periods).some(event => event.message.includes('TSAT REVISED'))).toBe(true);
   });
-  it('holds an unstarted aircraft forever when recovery is at or after the startup deadline', () => {
+  it('holds an unstarted aircraft when revised startup plus taxi exceeds CTOT plus ten minutes', () => {
     const original = base();
-    for (const end of [112, 115, 140]) {
+    for (const end of [123, 125, 140]) {
       const periods = [{ start: 95 * minute, end: end * minute }];
       const flight = applyWeatherPeriods([original], [], periods, '25L-25R').flights[0];
       expect(flight.wheelsOff).toBe(Infinity);

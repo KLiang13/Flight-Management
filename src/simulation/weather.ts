@@ -107,9 +107,10 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
   }
   function withState(input: WeatherDepartureState, forecast: number): TimelineItem {
     const previous = input.previous;
-    const deadline = previous.ctot - previous.taxiMinutes * MINUTE;
+    const slotEnd = previous.ctot + 10 * MINUTE;
     const blocked = input.blockedAt !== undefined || (input.end !== null && (
-      (input.heldAtStand && input.end >= deadline) || (!input.passedWeatherPoint && forecast > previous.ctot + 10 * MINUTE)));
+      input.heldAtStand ? input.groundReadyAt > slotEnd
+        : !input.passedWeatherPoint && forecast > slotEnd));
     const state: WeatherDepartureState = { ...input,
       blockedAt: blocked ? input.blockedAt ?? input.end ?? input.start : undefined,
       awaitTsat: blocked && input.heldAtStand,
@@ -389,8 +390,9 @@ function reserveWeatherPlan(flights: TimelineItem[], arrivals: ArrivalTimelineIt
   const newlyExpired = flights.filter(flight => {
     const movement = reserved.get(flight.id), state = flight.weather;
     return movement && state && !state.passedWeatherPoint && state.end !== null && state.blockedAt === undefined
-      && ((state.heldAtStand && state.end >= flight.ctot - flight.taxiMinutes * MINUTE)
-        || flight.wheelsOff + movement.delay > flight.ctot + 10 * MINUTE);
+      && (state.heldAtStand
+        ? state.groundReadyAt + movement.delay > flight.ctot + 10 * MINUTE
+        : flight.wheelsOff + movement.delay > flight.ctot + 10 * MINUTE);
   });
   if (newlyExpired.length) {
     const ids = new Set(newlyExpired.map(flight => flight.id));
