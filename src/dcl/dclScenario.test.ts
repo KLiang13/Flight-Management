@@ -11,9 +11,11 @@ describe('DCL playback scenario', () => {
     expect(events.some((event) => event.message.includes('CDA RECEIVED CLEARANCE CONFIRMED'))).toBe(true);
   });
 
-  it('includes the documented rejection and return-to-voice path for an exception scenario', () => {
-    const events = createDclEvents('VN123', 0, 13);
-    expect(events.some((event) => event.message.includes('RCD REJECTED REVERT TO VOICE PROCEDURES'))).toBe(true);
-    expect(events.some((event) => event.status === 'TỪ CHỐI' || event.status === 'TIMEOUT')).toBe(true);
+  it('accepts requests for every scenario seed', () => {
+    for (const seed of [1, 13, 26, 39]) {
+      const events = createDclEvents('VN123', 0, seed);
+      expect(events.every(event => event.status === 'OK')).toBe(true);
+      expect(events).toHaveLength(4);
+    }
   });
 });

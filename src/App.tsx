@@ -383,6 +383,7 @@ function App() {
       <section className="playback-bar" aria-label="Điều khiển phát lại">
         <div className="playback-label"><span className={`playback-dot ${playing ? 'active' : ''}`} /><span>{playing ? 'ĐANG PHÁT' : 'PHÁT LẠI 24 GIỜ'}</span></div>
         <button className="play-button" aria-label={playing ? 'Tạm dừng mô phỏng' : 'Phát mô phỏng'} onClick={() => { if (!proposed) runDay(); else setPlaying(!playing); }}><span>{playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</span>{playing ? 'Tạm dừng' : 'Phát'}</button>
+        <button className="play-button" aria-label="Lùi 10 giây" title="Lùi 10 giây" disabled={!proposed} onClick={() => setMinute(current => Math.max(playbackStartMinute, current - 10 / 60))}>↶ 10s</button>
         <div className="timeline-control"><span className="timeline-start">{fmtShort(dayStart + playbackStartMinute * 60_000)}</span><input aria-label="Tua thời gian mô phỏng" type="range" min={playbackStartMinute} max={playbackEndMinute} step={1} value={minute} style={{ '--progress': String((minute - playbackStartMinute) / (playbackEndMinute - playbackStartMinute) * 100) + '%' } as React.CSSProperties} onChange={(event) => setMinute(Number(event.target.value))} /><span className="timeline-end">{playbackEndLabel}</span></div>
         <div className="clock-display"><Clock3 size={15} /><strong>{Math.floor(clockMinute / 60).toString().padStart(2, '0')}:{Math.floor(clockMinute % 60).toString().padStart(2, '0')}</strong><span>LT{minute >= 1440 ? ' +1' : minute < 0 ? ' −1' : ''}</span></div>
         <span className="playback-divider" />
@@ -450,7 +451,7 @@ function App() {
         <div className="communications-column">
           <section className={`weather-bulletin ${badWeather ? 'adverse' : ''}`} aria-label="Bản tin thời tiết">
             <div><strong>BẢN TIN THỜI TIẾT</strong></div>
-            <p role="status">{badWeather ? 'ADVERSE WEATHER · STANDBY' : weatherPeriods.some(period => period.end !== null && period.end <= timeCursor) ? 'WEATHER IMPROVED · OPERATIONS RESUMED' : 'Thời tiết tốt'}</p>
+            <p role="status">{badWeather ? 'ADVERSE WEATHER' : weatherPeriods.some(period => period.end !== null && period.end <= timeCursor) ? 'WEATHER IMPROVED · OPERATIONS RESUMED' : 'Thời tiết tốt'}</p>
             <time>{fmtTime(weatherPeriods.flatMap(period => [period.start, ...(period.end === null ? [] : [period.end])]).filter(at => at <= timeCursor).at(-1) ?? dayStart)} LT</time>
           </section>
         <section className="panel dcl-panel" aria-label="Bản tin DCL"><button className="expand-panel dcl-expand" aria-label="Phóng rộng bản tin DCL" title="Phóng rộng DCL · Esc để thoát" onClick={event => { const panel = event.currentTarget.closest('.dcl-panel'); if (document.fullscreenElement) void document.exitFullscreen(); else if (panel) void panel.requestFullscreen(); }}><Maximize2 size={16} /></button>
@@ -485,7 +486,7 @@ function App() {
               const missed = hasMissedCtotAt(flight, timeCursor);
               const revisedSlot = flight.reissuedTsat ?? flight.reissuedCtot;
               const tsat = weather?.pending && flight.weather?.heldAtStand ? null : departureTsatAt(flight, timeCursor);
-              const status = departureStatusAt(flight, timeCursor, runway);
+              const status = badWeather && timeCursor < flight.takeoffRollStart ? 'Chờ thời tiết tốt' : departureStatusAt(flight, timeCursor, runway);
               return <tr key={flight.id} className={selectedFlight === flight.callsign ? 'selected-row' : ''} onClick={() => setSelectedFlight(flight.callsign)}>
                 <td className="order-cell">{flight.order.toString().padStart(2, '0')}</td>
                 <td><div className="flight-call">{flight.callsign}</div><div className="flight-type">{flight.aircraftType}</div></td>

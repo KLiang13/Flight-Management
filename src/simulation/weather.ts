@@ -298,7 +298,7 @@ export function weatherStatus(flight: TimelineItem, time: number): { label: stri
   const pending = weather.revisionAt === null || time < weather.revisionAt;
   return {
     label: pending
-      ? missed && !weather.heldAtStand ? 'CTOT EXPIRED' : 'Chờ thời tiết tốt'
+      ? 'Chờ thời tiết tốt'
       : missed ? 'Không tuân thủ CTOT' : flight.reissuedTsat !== null ? 'Đã cấp TSAT mới' : flight.reissuedCtot !== null ? 'Đã cấp CTOT mới' : 'Chờ khởi hành',
     missed, pending, tsat: pending && weather.heldAtStand ? null : departureTsatAt(flight, time),
   };
@@ -353,7 +353,7 @@ export function weatherDclEvents(flights: TimelineItem[], periods: WeatherPeriod
       if (state?.missedAt !== null && state?.missedAt !== undefined) events.push({
         id: `${flight.id}-weather-${period.start}-expired`, flightId: flight.id, time: state.missedAt,
         callsign: flight.callsign, direction: 'Hệ thống → Tổ lái',
-        message: `FSM ${messageStamp(state.missedAt)} VVTS ${flight.callsign} CTOT EXPIRED`, status: 'OK',
+        message: `FSM ${messageStamp(state.missedAt)} VVTS ${flight.callsign} KHÔNG TUÂN THỦ CTOT`, status: 'OK',
       });
       const revisionAt = state ? state.revisionAt : period.end;
       if (revisionAt === null || !Number.isFinite(current.wheelsOff)) continue;
@@ -389,5 +389,5 @@ export function composeWeatherDclEvents(events: DclEvent[], flights: TimelineIte
   });
   return [...events.filter(event => (event.message.startsWith('RCD ') && !event.message.includes('(RETRY)'))
     || !cutoffs.some(cutoff => event.flightId === cutoff.id && event.time >= cutoff.time)),
-    ...weatherDclEvents(flights, periods, events)].filter(event => !/ADVERSE WEATHER|WEATHER IMPROVED|DEPARTURE CLEARANCES RESUMED/.test(event.message)).sort((a, b) => a.time - b.time || a.id.localeCompare(b.id));
+    ...weatherDclEvents(flights, periods, events)].filter(event => !/ADVERSE WEATHER|WEATHER IMPROVED|DEPARTURE CLEARANCES RESUMED|\bCTOT(?: REVISED)? \d{4}/.test(event.message)).sort((a, b) => a.time - b.time || a.id.localeCompare(b.id));
 }

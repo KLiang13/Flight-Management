@@ -49,7 +49,8 @@ export function createDclEvents(callsign: string, baseTime: number, seed: number
   const stand = context.stand || '12';
   const runway = context.runway?.split('-')[0] || '25L';
   const slot = context.tsat ? hhmm(context.tsat) : hhmm(baseTime);
-  const exceptional = seed % 13 === 0;
+  const exceptional = false;
+  void seed;
   const events: DclEvent[] = [
     { id: `${callsign}-rcd`, time: baseTime, callsign, direction: 'Tổ lái → Hệ thống', message: `RCD ${callsign}-${origin}-STAND ${stand}-${destination} ATIS B-TYP/${aircraftType}-RMK/`, status: 'OK' },
     { id: `${callsign}-fsm`, time: baseTime + 15_000, callsign, direction: 'Hệ thống → Tổ lái', message: `FSM ${hhmm(baseTime + 15_000)} ${ddmmyy(baseTime)} ${origin} ${callsign} RCD RECEIVED REQUEST BEING PROCESSED STANDBY`, status: 'OK' },
