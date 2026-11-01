@@ -62,10 +62,14 @@ describe('Flight operations dashboard', () => {
     fireEvent.click(rain);
     expect(rain).toHaveAttribute('aria-checked', 'true');
     fireEvent.change(slider, { target: { value: '600' } });
-    expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).toHaveTextContent('Chờ thời tiết tốt');
+    expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).toHaveTextContent('Không tuân thủ CTOT');
+    expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).toHaveTextContent('Đang chờ CTOT');
+    expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).toHaveTextContent('Đang chờ TSAT');
     fireEvent.click(rain);
     expect(rain).toHaveAttribute('aria-checked', 'false');
-    expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).toHaveTextContent('Đã cấp TSAT mới');
+    expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).toHaveTextContent('Không tuân thủ CTOT');
+    expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).not.toHaveTextContent('Đang chờ CTOT');
+    expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).not.toHaveTextContent('Đang chờ TSAT');
     expect(dclBoard).toHaveTextContent('TSAT REVISED');
     const revised = document.querySelector('.time-cell[title*="TSAT mới"]')?.getAttribute('title')?.match(/TSAT mới (\d{2}):(\d{2})/);
     expect(revised).not.toBeNull();
