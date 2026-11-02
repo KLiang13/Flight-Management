@@ -9,6 +9,29 @@ const base = () => runSimulation([{ id: 'D', callsign: 'D', aircraftType: 'A321'
   readyAt: 100 * minute, ctot: 120 * minute, taxiMinutes: 8, row: {} }]).flights[0];
 
 describe('single CTOT operating policy', () => {
+  it('uses the weather end as revised TSAT for every cleared aircraft, independently of taxi separation', () => {
+    const original = base();
+    const other = { ...original, id: 'OTHER', callsign: 'OTHER', stand: '75', order: 2 };
+    const periods = [{ start: 95 * minute, end: 115 * minute }];
+    const plan = applyWeatherPeriods([original, other], [], periods, '25L-25R');
+    for (const flight of plan.flights) {
+      expect(flight.reissuedTsat).toBe(periods[0].end);
+      expect(departureTsatAt(flight, periods[0].end)).toBe(periods[0].end);
+      expect(flight.ctot).toBe(original.ctot);
+      expect(flight.reissuedCtot).toBeNull();
+      expect(Number.isFinite(flight.wheelsOff)).toBe(true);
+    }
+    const starts = plan.flights.map(flight => flight.secondTaxiStart!);
+    expect(new Set(starts).size).toBe(2);
+    const messages = weatherDclEvents(plan.flights, periods);
+    const stamp = new Date(periods[0].end).toLocaleTimeString('en-GB', {
+      hour12: false, hour: '2-digit', minute: '2-digit',
+    }).replace(':', '');
+    expect(messages.filter(event => event.message.includes('TSAT REVISED'))).toHaveLength(2);
+    expect(messages.filter(event => event.message.includes('TSAT REVISED'))
+      .every(event => event.message.endsWith('TSAT REVISED ' + stamp))).toBe(true);
+  });
+
   it('allows revised startup after TSAT when taxi still fits CTOT plus ten minutes, including equality', () => {
     const original = base();
     for (const end of [115, 119, (original.ctot + 10 * minute - departureTravelTimeMs(original)) / minute]) {
@@ -20,6 +43,19 @@ describe('single CTOT operating policy', () => {
       expect(flight.reissuedCtot).toBeNull();
       expect(weatherDclEvents([flight], periods).some(event => event.message.includes('TSAT REVISED'))).toBe(true);
     }
+  });
+  it('does not move the clearance clock to hide a departure delayed beyond its CTOT window', () => {
+    const original = { ...base(), wheelsOff: 127 * minute };
+    const inputs = [original, { ...original, id: 'SECOND', callsign: 'SECOND', stand: '75', order: 2 },
+      { ...original, id: 'THIRD', callsign: 'THIRD', stand: '80', order: 3 }];
+    const periods = [{ start: 95 * minute, end: 115 * minute }];
+    const plan = applyWeatherPeriods(inputs, [], periods, '25L-25R');
+    const held = plan.flights.find(flight => flight.id === 'THIRD')!;
+    expect(held.weather?.blockedAt).toBeDefined();
+    expect(held.wheelsOff).toBe(Infinity);
+    expect(held.reissuedCtot).toBeNull();
+    expect(held.reissuedTsat).toBeNull();
+    expect(weatherDclEvents([held], periods).some(event => event.message.includes('AWAIT NEW TSAT'))).toBe(true);
   });
   it('shows a future issued TSAT during rain and awaits revision only once it is due', () => {
     const original = base();

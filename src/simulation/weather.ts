@@ -109,8 +109,9 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
   function withState(input: WeatherDepartureState, forecast: number): TimelineItem {
     const previous = input.previous;
     const slotEnd = previous.ctot + 10 * MINUTE;
+    // Runway roll starts are rounded up to integer milliseconds by releaseTakeoffRoll.
     const blocked = input.blockedAt !== undefined || (input.end !== null && (
-      input.heldAtStand ? input.resumedTaxiStart + departureTravelTimeMs(previous) > slotEnd
+      input.heldAtStand ? input.resumedTaxiStart + departureTravelTimeMs(previous) > slotEnd || forecast > slotEnd + 1
         : !input.passedWeatherPoint && forecast > slotEnd));
     const state: WeatherDepartureState = { ...input,
       blockedAt: blocked ? input.blockedAt ?? input.end ?? input.start : undefined,
@@ -125,8 +126,9 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
       missedCtot: previous.missedCtot || blocked || forecast > previous.ctot + 10 * MINUTE,
       returnStart: state.returnStart, returnEnd: state.returnEnd, returnStand: state.returnStand,
       secondTaxiStart: state.resumedTaxiStart, reissuedCtot: null,
+      // The clearance clock is the weather end; taxi reservations may delay physical movement separately.
       reissuedTsat: !blocked && state.heldAtStand && state.end !== null
-        && state.resumedTaxiStart !== departureTsatAt(previous, state.start) ? state.resumedTaxiStart : null,
+        && state.end > departureTsatAt(previous, state.start) ? state.end : null,
       waitMinutes: 0, status: blocked ? 'Không tuân thủ CTOT' : 'Chờ khởi hành' };
     result.waitMinutes = departureWaitMinutesAt(result, wheelsOff);
     return result;
@@ -397,6 +399,7 @@ function reserveWeatherPlan(flights: TimelineItem[], arrivals: ArrivalTimelineIt
     return movement && state && !state.passedWeatherPoint && state.end !== null && state.blockedAt === undefined
       && (state.heldAtStand
         ? state.resumedTaxiStart + movement.delay + departureTravelTimeMs(flight) > flight.ctot + 10 * MINUTE
+          || flight.wheelsOff + movement.delay > flight.ctot + 10 * MINUTE + 1
         : flight.wheelsOff + movement.delay > flight.ctot + 10 * MINUTE);
   });
   if (newlyExpired.length) {
@@ -441,7 +444,6 @@ function reserveWeatherPlan(flights: TimelineItem[], arrivals: ArrivalTimelineIt
       runwayEntryStart: flight.runwayEntryStart + delay, takeoffRollStart: flight.takeoffRollStart + delay,
       returnStart: shifted(flight.returnStart, returnDelay), returnEnd: shifted(flight.returnEnd, returnDelay),
       secondTaxiStart: shifted(flight.secondTaxiStart, delay),
-      reissuedTsat: state.blockedAt === undefined && delay > 0 && state.heldAtStand ? (flight.reissuedTsat ?? flight.tsat) + delay : flight.reissuedTsat,
       reissuedCtot: null,
       weather: { ...state, surfacePlan: movement.plan, assignedCtot, returnedAfterStartup: returned,
         returnStart: shifted(state.returnStart, returnDelay), returnEnd: shifted(state.returnEnd, returnDelay),

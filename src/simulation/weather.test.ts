@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { runSimulation, type ScheduledFlight } from './runSimulation';
 import { arrivalPosition, departurePosition } from '../map/playback';
 import { getArrivalRoutePoints } from '../map/airfieldGeometry';
-import { applyWeatherPeriods, weatherStatus, weatherDclEvents } from './weather';
+import { applyWeatherPeriods, weatherStatus, weatherDclEvents, enforceSingleCtot } from './weather';
 import { formatDclMessage } from '../dcl/dclScenario';
 import { scheduleArrivals } from './arrivals';
 import { readFileSync } from 'node:fs';
@@ -162,7 +162,7 @@ describe('weather recovery with bundled workbooks', () => {
     }
     const day = [...counts].sort((a, b) => b[1] - a[1])[0][0];
     const rows = workbook.enrichedRows.filter((row) => toDayString(row.FlyDate ?? row.Date) === day);
-    const base = runSimulation(toScheduledFlights(rows.filter(isDepartureFromTsn)), true).flights;
+    const base = enforceSingleCtot(runSimulation(toScheduledFlights(rows.filter(isDepartureFromTsn)), true).flights);
     const arrivals = scheduleArrivals(rows.filter(isArrivalAtTsn), base);
     const start = base[0].taxiStart + minute;
     const plan = applyWeatherPeriods(base, arrivals, [{ start, end: start + 40 * minute }], '25L-25R');
@@ -173,11 +173,13 @@ describe('weather recovery with bundled workbooks', () => {
       if (!Number.isFinite(item.wheelsOff)) { expect(item.reissuedCtot).toBeNull(); continue; }
       if (item.reissuedTsat !== null) {
         expect(item.reissuedCtot).toBeNull();
+        expect(item.reissuedTsat).toBe(start + 40 * minute);
         expect(item.wheelsOff).toBeGreaterThanOrEqual(item.reissuedTsat + item.taxiMinutes * minute);
-      } else if (!item.weather?.returnedAfterStartup && !item.weather?.passedWeatherPoint) {
+      }
+      if (!item.weather?.returnedAfterStartup && !item.weather?.passedWeatherPoint) {
         const slot = item.reissuedCtot ?? item.ctot;
         expect(item.wheelsOff).toBeGreaterThanOrEqual(slot - 5 * minute);
-        expect(item.wheelsOff).toBeLessThanOrEqual(slot + 10 * minute);
+        expect(item.wheelsOff).toBeLessThanOrEqual(slot + 10 * minute + 1);
       }
       const previous = plan.flights.slice(0, index).filter(flight => Number.isFinite(flight.wheelsOff)).at(-1);
       if (previous) {

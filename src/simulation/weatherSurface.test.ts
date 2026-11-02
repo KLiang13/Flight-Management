@@ -13,6 +13,35 @@ import { scheduleArrivals } from './arrivals';
 import { computePlan } from './planning';
 
 describe('weather route reservations', () => {
+  it('keeps revised TSAT at weather recovery while safely separating calibrated departures', () => {
+    const minute = 60_000;
+    const scheduled = [71, 75, 80].map((stand, index) => ({ id: `RESUME${index}`, callsign: `RESUME${index}`, aircraftType: 'A321',
+      wakeCategory: 'M' as const, stand: String(stand), readyAt: (790 + index * 2) * minute,
+      ctot: (810 + index * 2) * minute, taxiMinutes: 8, row: {} }));
+    const baseline = planSurfaceTraffic(runSimulation(scheduled).flights, [], '25L-25R').flights;
+    const start = Math.min(...baseline.map(flight => flight.taxiStart)) - minute;
+    const end = Math.max(...baseline.map(flight => flight.taxiStart)) + minute;
+    const recovered = applyWeatherPeriods(baseline, [], [{ start, end }], '25L-25R').flights;
+    for (const flight of recovered) {
+      expect(flight.weather?.heldAtStand).toBe(true);
+      expect(flight.weather?.blockedAt).toBeUndefined();
+      expect(Number.isFinite(flight.wheelsOff)).toBe(true);
+      expect(flight.reissuedTsat).toBe(end);
+      expect(departureTsatAt(flight, end)).toBe(end);
+      expect(flight.reissuedCtot).toBeNull();
+      expect(flight.ctot).toBe(baseline.find(original => original.id === flight.id)!.ctot);
+    }
+    expect(new Set(recovered.map(flight => flight.secondTaxiStart)).size).toBe(3);
+    for (let time = end; time < Math.max(...recovered.map(flight => flight.wheelsOff)); time += 2000) {
+      const active = recovered.filter(flight => time < flight.wheelsOff);
+      for (let a = 0; a < active.length; a++) for (let b = a + 1; b < active.length; b++) {
+        const pa = departurePosition(active[a], time, 0, '25L-25R').point;
+        const pb = departurePosition(active[b], time, 0, '25L-25R').point;
+        expect(Math.hypot(pa.x - pb.x, pa.y - pb.y)).toBeGreaterThanOrEqual(18 - .01);
+      }
+    }
+  });
+
   it('keeps return playback chronological when permanent parking is reserved before a delayed return', () => {
     const movements = [
       { id: 'RETURN', radius: 9, priority: -1, start: 10000, end: Infinity, minimumDelay: 0, releaseDelay: (d: number) => d,
