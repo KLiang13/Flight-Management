@@ -1,4 +1,4 @@
-import { MAX_REPORT_BYTES, parseReport } from '../src/diagnostics/schema';
+import { MAX_REPORT_BYTES, parseReport } from '../src/diagnostics/schema.js';
 
 // Best-effort per-instance throttling; no public read endpoint and no raw IPs in logs.
 const clients = new Map<string, { at: number; count: number }>();
