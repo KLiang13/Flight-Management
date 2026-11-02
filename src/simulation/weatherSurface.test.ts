@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as surfaceGraph from '../map/surfaceGraph';
 import { planSurfaceTraffic, surfacePosition } from './surfaceTraffic';
 import { runSimulation } from './runSimulation';
-import { applyWeatherPeriods, weatherDclEvents } from './weather';
+import { applyWeatherPeriods, weatherDclEvents, weatherStatus } from './weather';
 import { departurePosition, arrivalPosition } from '../map/playback';
 import { reserveWeatherMovements } from './weatherSurface';
 import { departureCtotAt, departureTsatAt } from './departureTiming';
@@ -14,6 +14,46 @@ import { scheduleArrivals } from './arrivals';
 import { computePlan } from './planning';
 
 describe('weather route reservations', () => {
+  it('preserves future departures and their clocks after the 12:50 to 14:28:23 shower', async () => {
+    const bytes = readFileSync('public/samples/chuyen-de.xlsx');
+    const file = new File([bytes], 'Chuyên đề.xlsx');
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => Uint8Array.from(bytes).buffer });
+    const workbook = await readFlightFile(file);
+    const baseline = computePlan({ type: 'day', rows: workbook.enrichedRows.filter(isDepartureFromTsn),
+      arrivals: workbook.enrichedRows.filter(isArrivalAtTsn), runway: '25L-25R' });
+    const start = new Date('2026-10-01T12:50:00').getTime();
+    const end = new Date('2026-10-01T14:28:23').getTime();
+    const plan = applyWeatherPeriods(baseline.flights, baseline.arrivals, [{ start, end }], '25L-25R');
+    for (const callsign of ['SIA183', 'VJC254', 'MAS759', 'SPQ864']) {
+      const flight = plan.flights.find(f => f.callsign === callsign)!;
+      const original = baseline.flights.find(f => f.id === flight.id)!;
+      expect(Number.isFinite(flight.wheelsOff), callsign).toBe(true);
+      expect(flight.reissuedTsat, callsign).toBeNull();
+      expect(flight.ctot, callsign).toBe(original.ctot);
+      expect(departureTsatAt(flight, end), callsign).toBe(original.tsat);
+      expect(flight.wheelsOff, callsign).toBeLessThanOrEqual(flight.ctot + 10 * 60_000 + 1);
+      const startAt = flight.secondTaxiStart ?? flight.taxiStart;
+      const before = departurePosition(flight, startAt - 1, 0, '25L-25R').point;
+      const after = departurePosition(flight, startAt + 1, 0, '25L-25R').point;
+      expect(Math.hypot(before.x - after.x, before.y - after.y), callsign).toBeLessThan(1);
+    }
+    for (const flight of plan.flights) {
+      if (flight.weather?.offApron) expect(flight.wheelsOff).toBe(Infinity);
+      if (flight.tsat > end && flight.weather?.blockedAt !== undefined) {
+        expect(weatherStatus(flight, end + 12 * 60 * 60_000)?.tsat, flight.callsign).toBe(flight.tsat);
+      }
+    }
+    for (let time = end; time < end + 9 * 60 * 60_000; time += 10_000) {
+      const active = plan.flights.filter(f => !f.weather?.offApron && time >= f.tsat - 20 * 60_000 && time < f.wheelsOff);
+      for (let a = 0; a < active.length; a++) for (let b = a + 1; b < active.length; b++) {
+        const pa = departurePosition(active[a], time, 0, '25L-25R').point;
+        const pb = departurePosition(active[b], time, 0, '25L-25R').point;
+        expect(Math.hypot(pa.x - pb.x, pa.y - pb.y)).toBeGreaterThanOrEqual(
+          (active[a].wakeCategory === 'H' ? 15 : 9) + (active[b].wakeCategory === 'H' ? 15 : 9) - .01);
+      }
+    }
+  }, 60_000);
+
   it('releases a returned aircraft with revised TSAT when its original CTOT remains feasible', async () => {
     const bytes = readFileSync('public/samples/chuyen-de.xlsx');
     const file = new File([bytes], 'Chuyên đề.xlsx');

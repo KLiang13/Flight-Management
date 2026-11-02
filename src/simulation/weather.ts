@@ -128,7 +128,7 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
         : !input.passedWeatherPoint && forecast > slotEnd));
     const state: WeatherDepartureState = { ...input,
       blockedAt: blocked ? input.blockedAt ?? input.end ?? input.start : undefined,
-      awaitTsat: blocked && restarting,
+      awaitTsat: blocked && restarting && input.end !== null && departureTsatAt(previous, input.start) <= input.end,
       returnedAfterStartup: Boolean(input.returnedAfterStartup || (!input.heldAtStand && input.returnStand)),
       resumedTaxiStart: blocked && (input.atStand || input.returnStand) ? Infinity : input.resumedTaxiStart,
       groundReadyAt: blocked && (input.atStand || input.returnStand) ? Infinity : input.groundReadyAt,
@@ -185,7 +185,7 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
     }
     const needsStartup = pending.filter((flight) => currentState(flight) && (currentState(flight)!.heldAtStand || currentState(flight)!.atStand || currentState(flight)!.returnStand !== null))
       .sort((a, b) => a.weather!.resumedTaxiStart - b.weather!.resumedTaxiStart
-        || Number(a.weather!.missedAt !== null) - Number(b.weather!.missedAt !== null) || a.order - b.order);
+        || a.taxiMinutes - b.taxiMinutes || a.ctot - b.ctot || a.order - b.order);
     for (const flight of needsStartup) {
       const state = flight.weather!;
       const start = reserveTaxi(state.resumedTaxiStart);
@@ -212,18 +212,21 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
     let available = completed.at(-1)?.wheelsOff ?? -Infinity;
     if (Number.isFinite(available)) available += MOVEMENT;
     const earliest = (flight: TimelineItem) => currentState(flight)
-      ? Math.max(previousTakeoff(currentState(flight)!.previous), release + MOVEMENT, currentState(flight)!.groundReadyAt + MOVEMENT)
+      ? Math.max(flight.ctot - 5 * MINUTE, release + MOVEMENT, currentState(flight)!.groundReadyAt + MOVEMENT)
       : flight.wheelsOff;
     while (pending.length) {
       const expired = (flight: TimelineItem) => flight.ctot + 10 * MINUTE < Math.max(release, available, earliest(flight));
       pending.sort((a, b) => Number(Boolean(currentState(b)?.passedWeatherPoint)) - Number(Boolean(currentState(a)?.passedWeatherPoint))
         || Number(expired(a)) - Number(expired(b))
-        || earliest(a) - earliest(b) || a.order - b.order);
+        || earliest(a) - earliest(b)
+        || (a.reissuedTsat !== null && a.reissuedTsat === b.reissuedTsat ? a.taxiMinutes - b.taxiMinutes || a.ctot - b.ctot : 0)
+        || a.order - b.order);
       let index = 0;
       const heavyCount = pending.filter((flight) => flight.wakeCategory === 'H').length;
       const mediumCount = pending.length - heavyCount;
       if (completed.at(-1)?.wakeCategory !== 'H' && pending[0].wakeCategory === 'M' && heavyCount > mediumCount) {
-        index = pending.findIndex((flight) => flight.wakeCategory === 'H');
+        const readyHeavy = pending.findIndex(flight => flight.wakeCategory === 'H' && earliest(flight) <= Math.max(available, earliest(pending[0])));
+        if (readyHeavy >= 0) index = readyHeavy;
       }
       if (completed.at(-1)?.wakeCategory === 'H' && pending[0].wakeCategory === 'H') {
         index = pending.findIndex((flight) => flight.wakeCategory === 'M');
@@ -405,12 +408,14 @@ function reserveWeatherPlan(flights: TimelineItem[], arrivals: ArrivalTimelineIt
         return reserveWeatherPlan(flights.map(item => item.id === flight.id ? next : item),
           arrivals, period, runway, horizon, tried);
       }
-      const stopped = { ...flight, wheelsOff: Infinity, runwayEntryStart: Infinity,
-        takeoffRollStart: Infinity, secondTaxiStart: Infinity, reissuedTsat: null, reissuedCtot: null,
-        weather: { ...state, surfacePlan: undefined, blockedAt: period.end ?? period.start,
-          awaitTsat: true, resumedTaxiStart: Infinity, groundReadyAt: Infinity } };
-      return reserveWeatherPlan(flights.map(item => item.id === flight.id ? stopped : item),
-        arrivals, period, runway, horizon, tried);
+      if (flight.tsat - 20 * MINUTE < period.start) {
+        const stopped = { ...flight, wheelsOff: Infinity, runwayEntryStart: Infinity,
+          takeoffRollStart: Infinity, secondTaxiStart: Infinity, reissuedTsat: null, reissuedCtot: null,
+          weather: { ...state, surfacePlan: undefined, blockedAt: period.end ?? period.start,
+            awaitTsat: period.end !== null && flight.tsat <= period.end, resumedTaxiStart: Infinity, groundReadyAt: Infinity } };
+        return reserveWeatherPlan(flights.map(item => item.id === flight.id ? stopped : item),
+          arrivals, period, runway, horizon, tried);
+      }
     }
 
     if (!flight || (flight.weather ? !flight.weather.heldAtStand : flight.taxiStart < period.start)
@@ -427,17 +432,23 @@ function reserveWeatherPlan(flights: TimelineItem[], arrivals: ArrivalTimelineIt
     for (const other of arrivals) if (other.divertedAt === undefined && other.standArrival < until && other.standArrival + 45 * MINUTE > from) unavailable.add(other.stand);
     const stand = getNearestReturnStand(flight.stand, unavailable, flight.wakeCategory, getStandPoint(flight.stand));
     if (unavailable.has(stand)) {
-      return reserveWeatherPlan(flights.map(item => item.id === flight.id ? { ...item, weather: { ...period, previous: item, heldAtStand: true, groundStand: item.stand,
+      return reserveWeatherPlan(flights.map(item => item.id === flight.id ? { ...item, wheelsOff: Infinity, runwayEntryStart: Infinity, takeoffRollStart: Infinity, secondTaxiStart: Infinity, reissuedTsat: null, weather: { ...period, previous: item, heldAtStand: true, groundStand: item.stand,
         missedAt: null, returnStart: null, returnEnd: null, returnStand: null, returnPath: [],
-        resumedTaxiStart: item.taxiStart, groundReadyAt: item.taxiStart + item.taxiMinutes * MINUTE,
-        revisionAt: period.end, ...item.weather, offApron: true } } : item), arrivals, period, runway, horizon, tried);
+        revisionAt: period.end, ...item.weather, blockedAt: period.end ?? period.start, awaitTsat: false, resumedTaxiStart: Infinity, groundReadyAt: Infinity, offApron: true } } : item), arrivals, period, runway, horizon, tried);
     }
     tried.set(flight.id, new Set([...unavailable, stand]));
     const previous = flight.weather?.previous ?? flight;
     const state = flight.weather ?? { ...period, previous, heldAtStand: true, groundStand: stand,
       missedAt: null, returnStart: null, returnEnd: null, returnStand: null, returnPath: [],
       resumedTaxiStart: flight.taxiStart, groundReadyAt: flight.taxiStart + flight.taxiMinutes * MINUTE, revisionAt: period.end };
-    const reassigned = { ...flight, stand, weather: { ...state, groundStand: stand, surfacePlan: undefined } };
+    const outboundRoute = taxiRoutes(stand)[0].points;
+    const taxiMs = taxiDuration(pathLength(outboundRoute));
+    const groundReadyAt = state.resumedTaxiStart + taxiMs;
+    const shift = Number.isFinite(flight.runwayEntryStart) ? Math.max(0, groundReadyAt - flight.runwayEntryStart) : 0;
+    const reassigned = { ...flight, stand, taxiMinutes: taxiMs / MINUTE,
+      wheelsOff: flight.wheelsOff + shift, runwayEntryStart: flight.runwayEntryStart + shift,
+      takeoffRollStart: flight.takeoffRollStart + shift,
+      weather: { ...state, groundStand: stand, outboundRoute, groundReadyAt, surfacePlan: undefined } };
     return reserveWeatherPlan(flights.map(item => item.id === flight.id ? reassigned : item), arrivals, period, runway, horizon, tried);
   }
   const newlyExpired = flights.filter(flight => {
@@ -457,7 +468,7 @@ function reserveWeatherPlan(flights: TimelineItem[], arrivals: ArrivalTimelineIt
       if (!state || state.blockedAt !== undefined) return flight;
       return { ...flight, wheelsOff: Infinity, runwayEntryStart: Infinity, takeoffRollStart: Infinity,
         reissuedCtot: null, reissuedTsat: null, secondTaxiStart: state.heldAtStand || state.returnStand ? Infinity : flight.secondTaxiStart,
-        weather: { ...state, blockedAt: period.end ?? period.start, awaitTsat: state.heldAtStand || Boolean(state.returnStand),
+        weather: { ...state, blockedAt: period.end ?? period.start, awaitTsat: (state.heldAtStand || Boolean(state.returnStand)) && period.end !== null && flight.tsat <= period.end,
           resumedTaxiStart: state.heldAtStand || state.returnStand ? Infinity : state.resumedTaxiStart,
           groundReadyAt: state.heldAtStand || state.returnStand ? Infinity : state.groundReadyAt } };
     });

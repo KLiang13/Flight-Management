@@ -9,6 +9,24 @@ const base = () => runSimulation([{ id: 'D', callsign: 'D', aircraftType: 'A321'
   readyAt: 100 * minute, ctot: 120 * minute, taxiMinutes: 8, row: {} }]).flights[0];
 
 describe('single CTOT operating policy', () => {
+  it('dispatches equal revised TSATs by taxi duration, then the earlier original CTOT deadline', () => {
+    const original = base();
+    const inputs = [
+      { ...original, id: 'FAR', callsign: 'FAR', order: 1, stand: '73', taxiMinutes: 8 },
+      { ...original, id: 'NEAR-LATER', callsign: 'NEAR-LATER', order: 2, stand: '75', taxiMinutes: 2 },
+      { ...original, id: 'NEAR-EARLIER', callsign: 'NEAR-EARLIER', order: 3, stand: '80', taxiMinutes: 2, ctot: original.ctot - minute },
+    ];
+    const end = 110 * minute;
+    const plan = applyWeatherPeriods(inputs, [], [{ start: 95 * minute, end }], '25L-25R');
+    const departures = [...plan.flights].sort((a, b) => a.secondTaxiStart! - b.secondTaxiStart!);
+    expect(departures.map(f => f.id)).toEqual(['NEAR-EARLIER', 'NEAR-LATER', 'FAR']);
+    for (const flight of departures) {
+      expect(flight.reissuedTsat).toBe(end);
+      expect(flight.reissuedCtot).toBeNull();
+      expect(flight.wheelsOff).toBeLessThanOrEqual(flight.ctot + 10 * minute + 1);
+    }
+  });
+
   it('uses the weather end as revised TSAT for every cleared aircraft, independently of taxi separation', () => {
     const original = base();
     const other = { ...original, id: 'OTHER', callsign: 'OTHER', stand: '75', order: 2 };
@@ -48,7 +66,7 @@ describe('single CTOT operating policy', () => {
     const original = { ...base(), wheelsOff: 127 * minute };
     const inputs = [original, { ...original, id: 'SECOND', callsign: 'SECOND', stand: '75', order: 2 },
       { ...original, id: 'THIRD', callsign: 'THIRD', stand: '80', order: 3 }];
-    const periods = [{ start: 95 * minute, end: 115 * minute }];
+    const periods = [{ start: 95 * minute, end: 119 * minute }];
     const plan = applyWeatherPeriods(inputs, [], periods, '25L-25R');
     const held = plan.flights.find(flight => flight.id === 'THIRD')!;
     expect(held.weather?.blockedAt).toBeDefined();
