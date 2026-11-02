@@ -5,5 +5,5 @@
     "resolveJsonModule": true, "isolatedModules": true, "noEmit": true, "jsx": "react-jsx", "strict": true,
     "noUnusedLocals": false, "noUnusedParameters": false
   },
-  "include": ["src"], "references": []
+  "include": ["src", "api"], "references": []
 }

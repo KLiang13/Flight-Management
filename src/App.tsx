@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import './styles/app.css';
 import './styles/interface.css';
+import { captureError, downloadDiagnostics, setDiagnosticContext, trace } from './diagnostics/client';
+import { STATE_FIELDS, traceRows } from './diagnostics/schema';
 import { WeatherEffects } from './components/WeatherEffects';
 import { readFlightFile, type ImportedWorkbook } from './data/workbook';
 import { isArrivalAtTsn, isDepartureFromTsn, toDayString } from './data/enrichFlights';
@@ -84,6 +86,7 @@ function App() {
   useEffect(() => { dayJob.current?.abort(); return () => dayJob.current?.abort(); }, [day, selectedSource]);
 
   function useWorkbook(next: ImportedWorkbook, source: string) {
+    trace('dataset.selected', { source });
     dayJob.current?.abort(); dayJob.current = null;
     const movements = next.enrichedRows.filter((row) => isDepartureFromTsn(row) || isArrivalAtTsn(row));
     const dateCounts = new Map<string, number>();
@@ -179,6 +182,7 @@ function App() {
     ? baselineFlights.reduce((latest, flight) => { const request = flight.tsat - 20 * 60_000; return request <= timeCursor ? Math.max(latest, request) : latest; }, -Infinity)
     : Infinity;
   const [planningWeather, setPlanningWeather] = useState(false);
+  const [weatherAttempt, setWeatherAttempt] = useState(0);
   const [weatherResult, setWeatherResult] = useState<{ source: typeof baselineFlights | null; flights: typeof baselineFlights; arrivals: typeof baselineArrivals; error: string }>({ source: null, flights: [], arrivals: [], error: '' });
   useEffect(() => {
     if (!weatherPeriods.length || (!baselineFlights.length && !baselineArrivals.length)) {
@@ -187,14 +191,28 @@ function App() {
     }
     const controller = new AbortController();
     setPlanningWeather(true);
+    setWeatherResult(previous => previous.error ? { ...previous, error: '' } : previous);
     planAsync({ type: 'weather', flights: baselineFlights, arrivals: baselineArrivals, periods: weatherPeriods, runway, horizon: weatherHorizon }, controller.signal)
       .then(plan => { if (!controller.signal.aborted) setWeatherResult({ source: baselineFlights, ...plan, error: '' }); })
-      .catch(error => { if (!controller.signal.aborted) { setWeatherResult(previous => ({ ...previous, error: (error as Error).message })); setPlaying(false); } })
+      .catch(error => { if (!controller.signal.aborted) { const id = captureError(error, 'weather_planning'); setWeatherResult(previous => ({ ...previous, error: `${(error as Error).message} · Mã lỗi ${id}` })); setPlaying(false); } })
       .finally(() => { if (!controller.signal.aborted) setPlanningWeather(false); });
     return () => controller.abort();
-  }, [baselineFlights, baselineArrivals, weatherPeriods, runway, weatherHorizon]);
+  }, [baselineFlights, baselineArrivals, weatherPeriods, runway, weatherHorizon, weatherAttempt]);
   const weatherPlan = weatherResult.source === baselineFlights ? weatherResult : { flights: baselineFlights, arrivals: baselineArrivals, error: '' };
   const { flights, arrivals } = weatherPlan;
+  useEffect(() => {
+    setDiagnosticContext(() => ({ source: selectedSource, day, runway, minute, speed, playing, planningWeather,
+      weatherError: weatherPlan.error, periods: weatherPeriods,
+      horizon: Number.isFinite(weatherHorizon) ? weatherHorizon : weatherHorizon === -Infinity ? '-Infinity' : 'Infinity',
+      flightStates: traceRows(flights.slice(0, 1000).map(flight => ({ id: flight.id, callsign: flight.callsign,
+        stand: departureStandAt(flight, timeCursor), tsat: departureTsatAt(flight, timeCursor), ctot: flight.ctot,
+        reissuedTsat: flight.reissuedTsat, taxiStart: flight.taxiStart, secondTaxiStart: flight.secondTaxiStart,
+        runwayEntryStart: flight.runwayEntryStart, takeoffRollStart: flight.takeoffRollStart, wheelsOff: flight.wheelsOff,
+        status: departureStatusAt(flight, timeCursor, runway), blockedAt: flight.weather?.blockedAt,
+        passedWeatherPoint: flight.weather?.passedWeatherPoint })), STATE_FIELDS),
+      departures: traceRows(dailySchedule.slice(0, 1000)),
+      arrivals: traceRows(dailyArrivals.slice(0, Math.max(0, 1000 - dailySchedule.length))) }));
+  });
   const holdingPoint = getHoldingPoint(runway);
   const runwaySegment = getRunwaySegment(runway);
   const badWeather = proposed ? weatherPeriods.some((period) => period.start <= timeCursor && (period.end === null || timeCursor < period.end)) : weatherRequested;
@@ -218,6 +236,7 @@ function App() {
     .sort((a, b) => a.order - b.order);
   function toggleWeather() {
     const next = !badWeather;
+    trace('weather.changed', { adverse: next, minute });
     setWeatherRequested(next);
     if (!proposed) return;
     // Editing weather after seeking discards events later than the cursor.
@@ -233,6 +252,7 @@ function App() {
     setMinute(0); setWeatherPeriods([]); setWeatherRequested(false); setSelectedFlight(null);
   }
   function runDay() {
+    trace('simulation.started', { source: selectedSource, day, runway });
     if (!imported) { setMessage('Hãy chọn workbook trước khi chạy mô phỏng.'); return; }
     setBusy(true);
     dayJob.current?.abort();
@@ -279,7 +299,8 @@ function App() {
         setMessage(`Mô phỏng hoàn tất · ${improved.completed} chuyến đi · ${inbound.length} chuyến đến.`);
       } catch (error) {
         if (controller.signal.aborted) return;
-        setMessage(`Lỗi mô phỏng: ${(error as Error).message}`);
+        const id = captureError(error, 'day_planning');
+        setMessage(`Lỗi mô phỏng: ${(error as Error).message} · Mã lỗi ${id}`);
         setPlaying(false);
       } finally {
         if (dayJob.current === controller && !controller.signal.aborted) setBusy(false);
@@ -346,7 +367,7 @@ function App() {
     <main className={`app-shell ${focusMode ? 'focus-mode' : ''}`}>
       {message.startsWith('Lỗi mô phỏng:') && <div role="alert">{message}</div>}
       {(busy || planningWeather) && <div role="status" className="planning-status" style={{ position: 'fixed', top: 80, right: 24, zIndex: 1000, padding: '8px 14px', borderRadius: 8, background: '#14283d', color: 'white', pointerEvents: 'none' }}>Đang cập nhật lịch…</div>}
-      {weatherPlan.error && <div role="alert">Tạm dừng phát lại: {weatherPlan.error}</div>}
+      {weatherPlan.error && <div role="alert">Không thể cập nhật lịch: {weatherPlan.error} Bấm Phát để thử lại. <button onClick={downloadDiagnostics}>Tải báo cáo lỗi</button></div>}
       <header className="topbar">
         <a className="brand" href="#top" aria-label="Flight operations home">
           <span className="brand-mark"><Plane size={19} strokeWidth={2.3} /></span>
@@ -388,13 +409,14 @@ function App() {
       {(message.startsWith('Lỗi') || message.startsWith('Không thể') || message.startsWith('Không tải được') || message.startsWith('Không tìm thấy')) && <div className="notice notice-error" role="alert"><Info size={15} /><span>{message}</span></div>}
 
       <section className="playback-bar" aria-label="Điều khiển phát lại">
+        <button type="button" className="icon-button" onClick={downloadDiagnostics} aria-label="Tải nhật ký" title="Tải nhật ký"><FileSpreadsheet size={16} /></button>
         <div className="playback-label"><span className={`playback-dot ${playing ? 'active' : ''}`} /><span>{playing ? 'ĐANG PHÁT' : 'PHÁT LẠI 24 GIỜ'}</span></div>
-        <button className="play-button" disabled={busy || Boolean(weatherPlan.error)} aria-label={playing ? 'Tạm dừng mô phỏng' : 'Phát mô phỏng'} onClick={() => { if (!proposed) runDay(); else setPlaying(!playing); }}><span>{playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</span>{playing ? 'Tạm dừng' : 'Phát'}</button>
-        <button className="play-button" aria-label="Lùi 30 giây" title="Lùi 30 giây" disabled={!proposed} onClick={() => setMinute(current => Math.max(playbackStartMinute, current - 30 / 60))}>↶ 30s</button>
-        <div className="timeline-control"><span className="timeline-start">{fmtShort(dayStart + playbackStartMinute * 60_000)}</span><input aria-label="Tua thời gian mô phỏng" type="range" min={playbackStartMinute} max={playbackEndMinute} step={1} value={minute} style={{ '--progress': String((minute - playbackStartMinute) / (playbackEndMinute - playbackStartMinute) * 100) + '%' } as React.CSSProperties} onChange={(event) => setMinute(Number(event.target.value))} /><span className="timeline-end">{playbackEndLabel}</span></div>
+        <button className="play-button" disabled={busy} aria-label={playing ? 'Tạm dừng mô phỏng' : 'Phát mô phỏng'} onClick={() => { trace('playback.clicked', { minute, playing, planningWeather, retry: Boolean(weatherPlan.error) }); if (!proposed) runDay(); else if (weatherPlan.error) { setPlanningWeather(true); setWeatherAttempt(attempt => attempt + 1); setPlaying(true); } else setPlaying(!playing); }}><span>{playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</span>{playing ? 'Tạm dừng' : 'Phát'}</button>
+        <button className="play-button" aria-label="Lùi 30 giây" title="Lùi 30 giây" disabled={!proposed} onClick={() => { trace('playback.rewind', { minute, seconds: 30 }); setMinute(current => Math.max(playbackStartMinute, current - 30 / 60)); }}>↶ 30s</button>
+        <div className="timeline-control"><span className="timeline-start">{fmtShort(dayStart + playbackStartMinute * 60_000)}</span><input aria-label="Tua thời gian mô phỏng" type="range" min={playbackStartMinute} max={playbackEndMinute} step={1} value={minute} style={{ '--progress': String((minute - playbackStartMinute) / (playbackEndMinute - playbackStartMinute) * 100) + '%' } as React.CSSProperties} onChange={(event) => { const next = Number(event.target.value); trace('playback.seek', { from: minute, to: next }); setMinute(next); }} /><span className="timeline-end">{playbackEndLabel}</span></div>
         <div className="clock-display"><Clock3 size={15} /><strong>{Math.floor(clockMinute / 60).toString().padStart(2, '0')}:{Math.floor(clockMinute % 60).toString().padStart(2, '0')}</strong><span>LT{minute >= 1440 ? ' +1' : minute < 0 ? ' −1' : ''}</span></div>
         <span className="playback-divider" />
-        <div className="speed-control" aria-label="Tốc độ phát lại">{speeds.map((value) => <button key={value} onClick={() => setSpeed(value)} className={speed === value ? 'active' : ''} aria-pressed={speed === value}>{value}×</button>)}</div>
+        <div className="speed-control" aria-label="Tốc độ phát lại">{speeds.map((value) => <button key={value} onClick={() => { trace('playback.speed', { speed: value }); setSpeed(value); }} className={speed === value ? 'active' : ''} aria-pressed={speed === value}>{value}×</button>)}</div>
       </section>
 
 
@@ -494,7 +516,9 @@ function App() {
               const revisedSlot = flight.reissuedTsat ?? flight.reissuedCtot;
               const awaitingWeatherTimes = badWeather && missed && timeCursor < flight.wheelsOff;
               const tsat = weather ? weather.tsat : departureTsatAt(flight, timeCursor);
-              const status = badWeather && timeCursor < flight.takeoffRollStart ? missed ? 'Không tuân thủ CTOT' : 'Chờ thời tiết tốt' : departureStatusAt(flight, timeCursor, runway);
+              const status = !badWeather && timeCursor < flight.wheelsOff && (planningWeather || weatherPlan.error)
+                ? weatherPlan.error ? 'Chưa cập nhật lịch' : 'Đang cập nhật lịch'
+                : badWeather && timeCursor < flight.takeoffRollStart ? missed ? 'Không tuân thủ CTOT' : 'Chờ thời tiết tốt' : departureStatusAt(flight, timeCursor, runway);
               return <tr key={flight.id} className={selectedFlight === flight.callsign ? 'selected-row' : ''} onClick={() => setSelectedFlight(flight.callsign)}>
                 <td className="order-cell">{flight.order.toString().padStart(2, '0')}</td>
                 <td><div className="flight-call">{flight.callsign}</div><div className="flight-type">{flight.aircraftType}</div></td>

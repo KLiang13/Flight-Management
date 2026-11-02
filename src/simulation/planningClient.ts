@@ -1,8 +1,12 @@
+import { trace } from '../diagnostics/client';
 import { computePlan, type PlanningJob } from './planning';
 
 /** Terminating an obsolete worker prevents old weather results replacing a newer choice. */
 export function planAsync(job: PlanningJob, signal?: AbortSignal): Promise<ReturnType<typeof computePlan>> {
-  return new Promise((resolve, reject) => {
+  const started = performance.now();
+  const jobId = crypto.randomUUID();
+  trace('planning.started', { jobId, kind: job.type });
+  return new Promise<ReturnType<typeof computePlan>>((resolve, reject) => {
     if (signal?.aborted) { reject(new DOMException('Cancelled', 'AbortError')); return; }
     let worker: Worker | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -15,9 +19,15 @@ export function planAsync(job: PlanningJob, signal?: AbortSignal): Promise<Retur
     }
     try {
       worker = new Worker(new URL('./planning.worker.ts', import.meta.url), { type: 'module' });
-      worker.onmessage = event => { clean(); if (event.data.error) reject(new Error(event.data.error)); else resolve(event.data.plan); };
+      worker.onmessage = event => { clean(); if (event.data.error) { const error = new Error(event.data.error); error.name = event.data.name || 'Error'; if (event.data.stack) error.stack = event.data.stack; reject(error); } else resolve(event.data.plan); };
       worker.onerror = event => { clean(); reject(new Error(event.message || 'Không thể lập lịch.')); };
       worker.postMessage(job);
     } catch (error) { clean(); reject(error); }
+  }).then(plan => {
+    trace('planning.completed', { jobId, kind: job.type, durationMs: Math.round(performance.now() - started), flights: plan.flights.length, arrivals: plan.arrivals.length });
+    return plan;
+  }, error => {
+    trace(signal?.aborted ? 'planning.cancelled' : 'planning.failed', { jobId, kind: job.type, durationMs: Math.round(performance.now() - started), message: String(error.message).slice(0, 256) });
+    throw error;
   });
 }

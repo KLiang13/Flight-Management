@@ -2,11 +2,51 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
+import * as planningClient from './simulation/planningClient';
 import * as dclScenario from './dcl/dclScenario';
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('Flight operations dashboard', () => {
+  it('lets Play retry a failed weather recovery and resumes the clock only after success', async () => {
+    const csv = 'AirportDeliveryCode,AirportReceiptCode,CallSign,PlaneTypeCode,FlyDate,DeliveryTime\nVVTS,VVDN,RECOVER,A321,01/10/26,14:00';
+    const file = new File([csv], 'recovery.csv', { type: 'text/csv' });
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => new TextEncoder().encode(csv).buffer });
+    Object.defineProperty(window, 'showOpenFilePicker', { configurable: true, value: vi.fn().mockResolvedValue([{ getFile: async () => file }]) });
+    const original = planningClient.planAsync;
+    let fail = false;
+    const planner = vi.spyOn(planningClient, 'planAsync').mockImplementation((job, signal) => {
+      if (job.type === 'weather' && fail) { fail = false; return Promise.reject(new Error('temporary recovery error')); }
+      return original(job, signal);
+    });
+    render(<App />);
+    await userEvent.click(screen.getByRole('button', { name: /tải tệp mới/i }));
+    fireEvent.click(screen.getByRole('button', { name: /chạy mô phỏng/i }));
+    await waitFor(() => expect(screen.getAllByText('RECOVER').length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByRole('button', { name: 'Tạm dừng mô phỏng' }));
+    const slider = screen.getByRole('slider', { name: /tua thời gian/i });
+    fireEvent.change(slider, { target: { value: '800' } });
+    const rain = screen.getByRole('switch', { name: 'Thời tiết xấu' });
+    fireEvent.click(rain);
+    await waitFor(() => expect(screen.queryByText('Đang cập nhật lịch…')).not.toBeInTheDocument());
+    fail = true;
+    fireEvent.change(slider, { target: { value: '811' } });
+    fireEvent.click(rain);
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('temporary recovery error'));
+    const play = screen.getByRole('button', { name: 'Phát mô phỏng' });
+    expect(play).not.toBeDisabled();
+    expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).toHaveTextContent('Chưa cập nhật lịch');
+    expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).not.toHaveTextContent('Chờ thời tiết tốt');
+    expect(screen.getByRole('alert')).toHaveTextContent('Mã lỗi');
+    const calls = planner.mock.calls.length;
+    slider.setAttribute('step', 'any');
+    fireEvent.click(play);
+    await waitFor(() => expect(screen.queryByText('Đang cập nhật lịch…')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(planner.mock.calls.length).toBeGreaterThan(calls);
+    expect(screen.getByRole('button', { name: 'Tạm dừng mô phỏng' })).toBeEnabled();
+    await waitFor(() => expect(Number((slider as HTMLInputElement).value)).toBeGreaterThan(811));
+  });
   it('renders the Vietnamese title and the map, queue, and DCL event regions', () => {
     render(<App />);
     expect(screen.getByRole('heading', { name: /ứng dụng cpdlc- dcl trong quản lý luồng không lưu/i })).toBeInTheDocument();

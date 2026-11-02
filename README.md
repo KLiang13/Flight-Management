@@ -164,6 +164,10 @@ RCD phát đúng **TSAT ban đầu −20 phút**, kể cả khi thời tiết x�
 
 Thanh phát lại có nút **Lùi 30 giây**, thanh tua và các tốc độ phát; bản tin và vị trí hiển thị theo thời điểm đang xem.
 
+## Nhật ký và báo cáo lỗi
+
+Nút **Tải nhật ký** trên thanh thời gian xuất lịch sử thao tác, lỗi và trạng thái mô phỏng. Khi gặp lỗi, bản production tự gửi báo cáo có mã tra cứu đến endpoint của dự án trên Vercel; bản dự phòng được giữ trên trình duyệt. Xem [hướng dẫn tra log, dữ liệu được ghi và giới hạn lưu trữ](docs/DIAGNOSTICS.md).
+
 ## Dữ liệu đầu vào
 
 ### Ba workbook tích hợp

@@ -509,7 +509,7 @@ export function weatherStatus(flight: TimelineItem, time: number): { label: stri
     && time >= issuedTsat && (pending || weather.awaitTsat);
   return {
     label: missed ? 'Không tuân thủ CTOT' : pending
-      ? weather.normalSuspension ? 'Chờ khởi hành' : 'Chờ thời tiết tốt'
+      ? weather.normalSuspension ? 'Chờ khởi hành' : weather.end === null || time < weather.end ? 'Chờ thời tiết tốt' : 'Chờ huấn lệnh'
       : flight.reissuedTsat !== null ? 'Đã cấp TSAT mới' : flight.reissuedCtot !== null ? 'Đã cấp CTOT mới' : 'Chờ khởi hành',
     missed, pending, tsat: awaitingTsat ? null : issuedTsat,
   };
