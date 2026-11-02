@@ -1,5 +1,5 @@
 import type { TimelineItem } from './runSimulation';
-import { RUNWAY_MOVEMENT_MS, TAKEOFF_ROLL_MS } from './movementPhysics';
+import { RUNWAY_MOVEMENT_MS, TAKEOFF_ROLL_MS, taxiDuration } from './movementPhysics';
 import type { ArrivalTimelineItem } from './arrivals';
 import { departurePosition, arrivalPosition } from '../map/playback';
 import type { SurfacePlan } from './surfaceTraffic';
@@ -8,7 +8,7 @@ import { getNearestReturnStand, getStandPoint, getTaxiRoutePoints, type MapPoint
 import type { DclEvent } from '../dcl/dclScenario';
 import { departureCtotAt, departureTsatAt, departureWaitMinutesAt, departureTravelTimeMs } from './departureTiming';
 import { releaseTakeoffRoll, arrivalDelayForBookedRolls, reserveCrossingsBeforeDeparture } from './runwayCoordination';
-import { CTOT_COMMIT_POINT, weatherReturnVia1A } from '../map/surfaceGraph';
+import { CTOT_COMMIT_POINT, weatherReturnVia1A, taxiRoutes } from '../map/surfaceGraph';
 
 const MINUTE = 60_000;
 const MOVEMENT = RUNWAY_MOVEMENT_MS;
@@ -366,6 +366,40 @@ function reserveWeatherPlan(flights: TimelineItem[], arrivals: ArrivalTimelineIt
       return reserveWeatherPlan(flights, arrivals.map(item => item.id === arriving.id ? next : item), period, runway, horizon, tried);
     }
     const flight = flights.find(item => item.id === error.movement.id);
+    // An aircraft already visible at its stand cannot be moved to another stand retroactively.
+    // Try the chart's alternative taxi routes before suspending only this departure.
+    const unstarted = flight && (flight.weather?.heldAtStand ?? flight.taxiStart >= period.start);
+    if (flight && unstarted && Number.isFinite(flight.wheelsOff)) {
+      const state = flight.weather ?? { ...period, previous: flight, heldAtStand: true,
+        groundStand: flight.stand, atStand: true, missedAt: null, returnStart: null,
+        returnEnd: null, returnStand: null, returnPath: [],
+        resumedTaxiStart: flight.taxiStart, groundReadyAt: flight.taxiStart + flight.taxiMinutes * MINUTE,
+        revisionAt: period.end };
+      const attempts = tried.get(flight.id) ?? new Set<string>();
+      for (const route of taxiRoutes(state.groundStand)) {
+        const key = `route:${route.id}`;
+        if (attempts.has(key)) continue;
+        attempts.add(key);
+        tried.set(flight.id, attempts);
+        const taxiMs = taxiDuration(pathLength(route.points));
+        const groundReadyAt = state.resumedTaxiStart + taxiMs;
+        const shift = Math.max(0, groundReadyAt - flight.runwayEntryStart);
+        if (groundReadyAt + MOVEMENT > flight.ctot + 10 * MINUTE
+          || flight.wheelsOff + shift > flight.ctot + 10 * MINUTE + 1) continue;
+        const next = { ...flight, taxiMinutes: taxiMs / MINUTE,
+          wheelsOff: flight.wheelsOff + shift, runwayEntryStart: flight.runwayEntryStart + shift,
+          takeoffRollStart: flight.takeoffRollStart + shift,
+          weather: { ...state, outboundRoute: route.points, groundReadyAt, surfacePlan: undefined } };
+        return reserveWeatherPlan(flights.map(item => item.id === flight.id ? next : item),
+          arrivals, period, runway, horizon, tried);
+      }
+      const stopped = { ...flight, wheelsOff: Infinity, runwayEntryStart: Infinity,
+        takeoffRollStart: Infinity, secondTaxiStart: Infinity, reissuedTsat: null, reissuedCtot: null,
+        weather: { ...state, surfacePlan: undefined, blockedAt: period.end ?? period.start,
+          awaitTsat: true, resumedTaxiStart: Infinity, groundReadyAt: Infinity } };
+      return reserveWeatherPlan(flights.map(item => item.id === flight.id ? stopped : item),
+        arrivals, period, runway, horizon, tried);
+    }
 
     if (!flight || (flight.weather ? !flight.weather.heldAtStand : flight.taxiStart < period.start)
       || flight.tsat - 20 * MINUTE < period.start) throw error;

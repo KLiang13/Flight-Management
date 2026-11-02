@@ -56,7 +56,7 @@ export function departurePosition(flight: TimelineItem, time: number, queueIndex
       phase: missed ? `chờ TSAT/CTOT mới tại stand ${weather.groundStand}` : `chờ thời tiết tốt tại stand ${weather.groundStand}`, rotation: 0,
     };
     if ((weather.heldAtStand || weather.atStand || weather.returnStand) && time < weather.groundReadyAt) {
-      const route = getTaxiRoutePoints(weather.returnStand ?? weather.groundStand, runway);
+      const route = weather.outboundRoute ?? getTaxiRoutePoints(weather.returnStand ?? weather.groundStand, runway);
       return { point: pointAlongPath(route, (time - weather.resumedTaxiStart) / (weather.groundReadyAt - weather.resumedTaxiStart)),
         phase: weather.heldAtStand ? 'lăn theo TSAT mới' : 'lăn theo CTOT mới', rotation: 0 };
     }

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import * as surfaceGraph from '../map/surfaceGraph';
 import { planSurfaceTraffic, surfacePosition } from './surfaceTraffic';
 import { runSimulation } from './runSimulation';
 import { applyWeatherPeriods } from './weather';
@@ -13,6 +14,39 @@ import { scheduleArrivals } from './arrivals';
 import { computePlan } from './planning';
 
 describe('weather route reservations', () => {
+  it.each([false, true])('isolates the reported route conflict without stopping the day (alternatives blocked: %s)', async (noAlternatives) => {
+    const bytes = readFileSync('public/samples/chuyen-de.xlsx');
+    const file = new File([bytes], 'Chuyên đề.xlsx');
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => Uint8Array.from(bytes).buffer });
+    const workbook = await readFlightFile(file);
+    const baseline = computePlan({ type: 'day', rows: workbook.enrichedRows.filter(isDepartureFromTsn),
+      arrivals: workbook.enrichedRows.filter(isArrivalAtTsn), runway: '25L-25R' });
+    const start = 1790836159674, end = 1790836249199;
+    const originalRoutes = surfaceGraph.taxiRoutes;
+    const routes = noAlternatives ? vi.spyOn(surfaceGraph, 'taxiRoutes').mockImplementation((stand, from) =>
+      stand === '99' && (from === undefined || from === 'stand')
+        ? originalRoutes(stand, from).slice(0, 1) : originalRoutes(stand, from)) : undefined;
+    let plan: ReturnType<typeof applyWeatherPeriods>;
+    try { plan = applyWeatherPeriods(baseline.flights, baseline.arrivals, [{ start, end }], '25L-25R'); }
+    finally { routes?.mockRestore(); }
+    expect(plan.flights).toHaveLength(70);
+    const target = plan.flights.find(f => f.callsign === 'VFC8063')!;
+    expect(Number.isFinite(target.wheelsOff)).toBe(!noAlternatives);
+    expect(plan.flights.filter(f => Number.isFinite(f.wheelsOff)).length).toBeGreaterThan(50);
+    expect(target.ctot).toBe(baseline.flights.find(f => f.id === target.id)!.ctot);
+    expect(departureTsatAt(target, end)).toBe(target.tsat);
+    expect(target.reissuedCtot).toBeNull();
+    for (let time = start; time < end + 30 * 60_000; time += 2000) {
+      const active = plan.flights.filter(f => !f.weather?.offApron && time >= f.tsat - 20 * 60_000 && time < f.wheelsOff);
+      for (let a = 0; a < active.length; a++) for (let b = a + 1; b < active.length; b++) {
+        const pa = departurePosition(active[a], time, 0, '25L-25R').point;
+        const pb = departurePosition(active[b], time, 0, '25L-25R').point;
+        expect(Math.hypot(pa.x - pb.x, pa.y - pb.y)).toBeGreaterThanOrEqual(
+          (active[a].wakeCategory === 'H' ? 15 : 9) + (active[b].wakeCategory === 'H' ? 15 : 9) - .01);
+      }
+    }
+  }, 60_000);
+
   it('keeps revised TSAT at weather recovery while safely separating calibrated departures', () => {
     const minute = 60_000;
     const scheduled = [71, 75, 80].map((stand, index) => ({ id: `RESUME${index}`, callsign: `RESUME${index}`, aircraftType: 'A321',
