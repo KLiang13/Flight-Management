@@ -39,7 +39,8 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
   const inbound = incoming.filter(arrival => !divertedIds.has(arrival.id));
   const reservations: Reservation[] = departures.map((flight) => ({
     stand: flight.stand, from: flight.readyAt - 45 * MINUTE,
-    until: flight.taxiStart >= period.start ? Math.max(flight.taxiStart, release) : flight.taxiStart, id: flight.id,
+    until: flight.weather?.blockedAt !== undefined && flight.weather.heldAtStand && !flight.weather.returnStand ? Infinity
+      : flight.taxiStart >= period.start ? Math.max(flight.taxiStart, release) : flight.taxiStart, id: flight.id,
   }));
   for (const flight of departures) if (flight.returnStand && flight.returnStart !== null) reservations.push({
     stand: flight.returnStand, from: flight.returnStart, until: flight.secondTaxiStart ?? Infinity, id: flight.id,
@@ -334,7 +335,8 @@ function reserveWeatherPlan(flights: TimelineItem[], arrivals: ArrivalTimelineIt
       ...(state?.previous.weather?.surfacePlan?.legs.flatMap(leg => [leg.start, leg.end]) ?? [])];
     const legs = weatherTrajectory(start, end, time => departurePosition(flight, time, Math.max(0, queueIndex(time)), runway), checkpoints);
     if (!Number.isFinite(flight.wheelsOff)) legs.push({ start: end, end: Infinity, points: [departurePosition(flight, end, Math.max(0, queueIndex(end)), runway).point], phase: 'chờ thời tiết tốt' });
-    movements.push({ id: flight.id, priority: state?.blockedAt !== undefined && !state.returnStand ? -1 + (flight.tsat - 20 * MINUTE - period.start) / MINUTE / 1_000_000 : 1, radius: flight.wakeCategory === 'H' ? 15 : 9, start,
+    // Permanent occupants, including returned aircraft, own their stands before future RCD requests.
+    movements.push({ id: flight.id, priority: state?.blockedAt !== undefined ? -1 + (flight.tsat - 20 * MINUTE - period.start) / MINUTE / 1_000_000 : 1, radius: flight.wakeCategory === 'H' ? 15 : 9, start,
       end: Number.isFinite(flight.wheelsOff) ? end : Infinity, legs, minimumDelay: 0,
       entryAt: Number.isFinite(flight.runwayEntryStart) ? flight.runwayEntryStart : undefined,
       releaseDelay: (desired, booked) => {

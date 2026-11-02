@@ -13,6 +13,65 @@ import { scheduleArrivals } from './arrivals';
 import { computePlan } from './planning';
 
 describe('weather route reservations', () => {
+  it('keeps return playback chronological when permanent parking is reserved before a delayed return', () => {
+    const movements = [
+      { id: 'RETURN', radius: 9, priority: -1, start: 10000, end: Infinity, minimumDelay: 0, releaseDelay: (d: number) => d,
+        legs: [{ start: 10000, end: Infinity, points: [{ x: 100, y: 0 }], phase: 'parked' }] },
+      { id: 'RETURN', radius: 9, returning: true, priority: .25, start: 0, end: 10000, minimumDelay: 2000, releaseDelay: (d: number) => d,
+        legs: [{ start: 0, end: 10000, points: [{ x: 0, y: 0 }, { x: 100, y: 0 }], phase: 'returning' }] },
+    ];
+    const result = reserveWeatherMovements(movements).get('RETURN')!;
+    expect(result.delay).toBe(0);
+    expect(result.returnDelay).toBe(2000);
+    expect(result.plan.visibleFrom).toBe(0);
+    expect(result.plan.visibleUntil).toBe(Infinity);
+    expect(surfacePosition(result.plan, 0).point.x).toBe(0);
+    expect(surfacePosition(result.plan, 6000).point.x).toBeCloseTo(40);
+    expect(surfacePosition(result.plan, 11000).point.x).toBeCloseTo(90);
+    expect(surfacePosition(result.plan, 12000).point.x).toBe(100);
+  });
+  it('reserves a returned stand before future flights, independent of callsign', async () => {
+    const bytes = readFileSync('public/samples/chuyen-de.xlsx');
+    const file = new File([bytes], 'Chuyên đề.xlsx');
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => Uint8Array.from(bytes).buffer });
+    const workbook = await readFlightFile(file);
+    const baseline = computePlan({ type: 'day', rows: workbook.enrichedRows.filter(isDepartureFromTsn), arrivals: workbook.enrichedRows.filter(isArrivalAtTsn), runway: '25L-25R' });
+    const flights = baseline.flights.map(flight => flight.callsign === 'VJC142' ? { ...flight, id: 'GENERIC-RETURN', callsign: 'GENERIC-RETURN' } : flight);
+    const day = new Date('2026-10-01T00:00:00').getTime();
+    for (const callsign of ['GENERIC-RETURN', 'VAG678', 'VJC842', 'VFC8063']) {
+      const target = flights.find(flight => flight.callsign === callsign)!;
+      const start = callsign === 'GENERIC-RETURN' ? day + 807.5 * 60_000 : target.taxiStart + 30_000;
+      const plan = applyWeatherPeriods(flights, baseline.arrivals, [{ start, end: start + 44_000 }], '25L-25R');
+      expect(plan.flights).toHaveLength(flights.length);
+      const returned = plan.flights.find(flight => flight.id === target.id)!;
+      expect(returned.weather?.returnStand, callsign).toBeTruthy();
+      expect(returned.wheelsOff, callsign).toBe(Infinity);
+      const returnEnd = returned.returnEnd!;
+      let prior = departurePosition(returned, start, 0, '25L-25R').point;
+      for (let time = start + 2000; time < returnEnd + 4000; time += 2000) {
+        const point = departurePosition(returned, time, 0, '25L-25R').point;
+        expect(Math.hypot(point.x - prior.x, point.y - prior.y), `${callsign} continuity`).toBeLessThan(20);
+        prior = point;
+      }
+      if (callsign === 'GENERIC-RETURN') {
+        const secondStart = returnEnd + 60_000;
+        const again = applyWeatherPeriods(flights, baseline.arrivals,
+          [{ start, end: start + 44_000 }, { start: secondStart, end: secondStart + 44_000 }], '25L-25R');
+        const held = again.flights.find(flight => flight.id === target.id)!;
+        expect(held.returnStand).toBe(returned.returnStand);
+        expect(held.wheelsOff).toBe(Infinity);
+      }
+      const parked = departurePosition(returned, returnEnd + 1, 0, '25L-25R').point;
+      for (const other of plan.flights.filter(flight => flight.id !== returned.id && !flight.weather?.offApron)) {
+        for (const time of [returnEnd + 1, other.tsat - 20 * 60_000 + 1, other.taxiStart - 1]) {
+          if (time <= returnEnd || time < other.tsat - 20 * 60_000 || time >= other.wheelsOff) continue;
+          const point = departurePosition(other, time, 0, '25L-25R').point;
+          expect(Math.hypot(point.x - parked.x, point.y - parked.y), `${callsign}/${other.callsign}`)
+            .toBeGreaterThanOrEqual((other.wakeCategory === 'H' ? 15 : 9) + (returned.wakeCategory === 'H' ? 15 : 9) - .01);
+        }
+      }
+    }
+  }, 60_000);
   it('does not suspend the six future departures after rain from 13:13 to 13:26', async () => {
     const bytes = readFileSync('public/samples/chuyen-de.xlsx');
     const file = new File([bytes], 'Chuyên đề.xlsx');

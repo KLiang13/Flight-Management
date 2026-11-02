@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -39,13 +39,17 @@ describe('Flight operations dashboard', () => {
     expect(screen.getByRole('region', { name: 'Hàng chờ cất cánh' })).not.toHaveTextContent('Chờ thời tiết tốt');
     expect(screen.getByRole('alert')).toHaveTextContent('Mã lỗi');
     const calls = planner.mock.calls.length;
-    slider.setAttribute('step', 'any');
+    let frame: FrameRequestCallback | undefined;
+    vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => { frame = callback; return 1; }));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
     fireEvent.click(play);
     await waitFor(() => expect(screen.queryByText('Đang cập nhật lịch…')).not.toBeInTheDocument());
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
     expect(planner.mock.calls.length).toBeGreaterThan(calls);
     expect(screen.getByRole('button', { name: 'Tạm dừng mô phỏng' })).toBeEnabled();
-    await waitFor(() => expect(Number((slider as HTMLInputElement).value)).toBeGreaterThan(811));
+    await waitFor(() => expect(frame).toBeDefined());
+    act(() => frame!(performance.now() + 6000));
+    expect(Number((slider as HTMLInputElement).value)).toBeGreaterThan(811);
   });
   it('renders the Vietnamese title and the map, queue, and DCL event regions', () => {
     render(<App />);

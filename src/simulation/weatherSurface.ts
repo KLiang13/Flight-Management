@@ -53,8 +53,18 @@ export function reserveWeatherMovements(movements: WeatherMovement[]): Map<strin
       if (reservations.available(legs, movement.radius, movement.id)) {
         reservations.reserve(legs, movement.radius, movement.id);
         const previous = result.get(movement.id);
-        result.set(movement.id, { delay, returnDelay: movement.returning ? delay : previous?.returnDelay,
-          plan: { visibleFrom: previous?.plan.visibleFrom ?? movement.start + (movement.holdAtStart === false ? delay : 0), visibleUntil: movement.end + delay, legs: [...previous?.plan.legs ?? [], ...legs], route: 'weather-reserved' } });
+        // Reservation priority must not change the chronological playback of one aircraft.
+        // A returned aircraft's parking may be booked before its approach to that stand.
+        const priorLegs = movement.returning && previous
+          ? previous.plan.legs.map(leg => ({ ...leg, start: Math.max(leg.start, movement.end + delay) }))
+            .filter(leg => leg.end > leg.start)
+          : previous?.plan.legs ?? [];
+        const combined = [...priorLegs, ...legs].sort((a, b) => a.start - b.start || a.end - b.end);
+        result.set(movement.id, { delay: movement.returning ? previous?.delay ?? delay : delay,
+          returnDelay: movement.returning ? delay : previous?.returnDelay,
+          plan: { visibleFrom: Math.min(previous?.plan.visibleFrom ?? Infinity, legs[0].start),
+            visibleUntil: Math.max(previous?.plan.visibleUntil ?? -Infinity, movement.end + delay),
+            legs: combined, route: 'weather-reserved' } });
         if (movement.entryAt !== undefined && Number.isFinite(movement.end)) previousDepartureEnd = movement.end + delay;
         accepted = true; break;
       }
