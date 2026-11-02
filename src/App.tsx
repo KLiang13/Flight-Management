@@ -15,7 +15,7 @@ import { getHoldingPoint, getRunwaySegment, getTaxiRouteDescription, MAP_VIEWBOX
 import { arrivalPosition, departurePosition, TAKEOFF_VISIBLE_AFTER_MS } from './map/playback';
 import { planAsync } from './simulation/planningClient';
 import { scheduleArrivals, type ArrivalTimelineItem } from './simulation/arrivals';
-import { clearanceRequestTime, departureCtotAt, departureTsatAt, departureWaitMinutesAt } from './simulation/departureTiming';
+import { clearanceRequestTime, departureCtotAt, departureTsatAt, departureWaitMinutesAt, departureTravelTimeMs } from './simulation/departureTiming';
 import { applyWeatherPeriods, composeWeatherDclEvents, weatherStatus, departureStandAt, departureStatusAt, departureAtTime, hasMissedCtotAt, hasReissuedSlotAt, type WeatherPeriod } from './simulation/weather';
 
 type FilePickerWindow = Window & { showOpenFilePicker?: (options?: unknown) => Promise<FileSystemFileHandle[]> };
@@ -33,6 +33,10 @@ const shortTimeFormat = new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minu
 const numberFormat = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 });
 const fmtTime = (time: number) => Number.isFinite(time) ? timeFormat.format(time) : '—';
 const fmtShort = (time: number) => Number.isFinite(time) ? shortTimeFormat.format(time) : '—';
+const fmtTravelTime = (flight: TimelineItem) => {
+  const seconds = Math.ceil(departureTravelTimeMs(flight) / 1000);
+  return `${Math.floor(seconds / 60)} phút ${String(seconds % 60).padStart(2, '0')} giây`;
+};
 const fmtNumber = (n: number) => numberFormat.format(n);
 const seeded = (text: string) => [...text].reduce((a, c) => Math.imul(a ^ c.charCodeAt(0), 16777619) >>> 0, 2166136261);
 
@@ -482,7 +486,7 @@ function App() {
         <section className="panel queue-panel" aria-label="Hàng chờ cất cánh">
           <div className="panel-heading queue-heading"><div><h2>Hàng chờ cất cánh</h2></div><span className={`queue-live ${playing ? 'on' : ''}`}><span />{playing ? 'LIVE' : 'ĐANG CHỜ'}</span></div>
           <div className="queue-toolbar"><div className="search-box"><Search size={15} /><input aria-label="Tìm chuyến bay" placeholder="Tìm callsign, stand…" value={search} onChange={(event) => setSearch(event.target.value)} /></div><select aria-label="Lọc hàng chờ" value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">Tất cả chuyến</option><option value="moving">Đang lăn</option><option value="missed">Không tuân thủ CTOT</option></select></div>
-          <div className="table-scroll" style={showAllFlights ? { height: 'auto', maxHeight: 'none', overflow: 'visible' } : undefined}><table><thead><tr><th>#</th><th>CALLSIGN / LOẠI TÀU BAY</th><th>STAND</th><th>CTOT</th><th>TSAT</th><th>TRẠNG THÁI</th></tr></thead><tbody>
+          <div className="table-scroll" style={showAllFlights ? { height: 'auto', maxHeight: 'none', overflow: 'visible' } : undefined}><table><thead><tr><th>#</th><th>CALLSIGN / LOẠI TÀU BAY</th><th>STAND</th><th>CTOT</th><th>THỜI GIAN LĂN</th><th>TSAT</th><th>TRẠNG THÁI</th></tr></thead><tbody>
             {visibleFlights.slice(0, showAllFlights ? undefined : 10).map((plannedFlight) => {
               const flight = departureAtTime(plannedFlight, timeCursor);
               const weather = weatherStatus(flight, timeCursor);
@@ -496,11 +500,12 @@ function App() {
                 <td><div className="flight-call">{flight.callsign}</div><div className="flight-type">{flight.aircraftType}</div></td>
                 <td><span className="stand-pill">{flight.weather?.offApron ? 'Chờ vị trí đỗ' : departureStandAt(flight, timeCursor)}</span></td>
                 <td className="time-cell" title={`CTOT gốc ${fmtShort(flight.ctot)}`}>{awaitingWeatherTimes ? 'Đang chờ CTOT' : fmtShort(departureCtotAt(flight, timeCursor))}</td>
+                <td className="time-cell" title="Từ lúc rời stand đến khi bay lên; không gồm thời gian đứng chờ">{fmtTravelTime(flight)}</td>
                 <td className="time-cell" title={`CTOT gốc ${fmtShort(flight.ctot)}${revisedSlot !== null && Number.isFinite(revisedSlot) ? ` · ${flight.reissuedTsat !== null ? 'TSAT' : 'CTOT'} mới ${fmtShort(revisedSlot)}` : ''}`}>{awaitingWeatherTimes ? 'Đang chờ TSAT' : tsat === null || !Number.isFinite(tsat) ? 'Chờ cấp lại' : fmtShort(tsat)}</td>
                 <td><span className={`status-pill ${missed ? 'status-late' : weather?.pending || (!weather && flight.waitMinutes > .1) ? 'status-wait' : 'status-ok'}`}><i />{status}</span></td>
               </tr>;
             })}
-            {!visibleFlights.length && <tr><td colSpan={6} className="empty-row">{flights.length ? 'Không có chuyến phù hợp bộ lọc.' : 'Nạp dữ liệu và chạy mô phỏng để hiển thị hàng chờ.'}</td></tr>}
+            {!visibleFlights.length && <tr><td colSpan={7} className="empty-row">{flights.length ? 'Không có chuyến phù hợp bộ lọc.' : 'Nạp dữ liệu và chạy mô phỏng để hiển thị hàng chờ.'}</td></tr>}
           </tbody></table></div>
           <div className="queue-footer"><span>Hiển thị <b>{fmtNumber(showAllFlights ? visibleFlights.length : Math.min(visibleFlights.length, 10))}</b> / {fmtNumber(visibleFlights.length)} chuyến</span>{visibleFlights.length > 10 && <button onClick={() => setShowAllFlights(value => !value)}>{showAllFlights ? 'Thu gọn' : 'Xem toàn bộ'} <ArrowRight size={14} /></button>}</div>
         </section>

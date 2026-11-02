@@ -170,8 +170,8 @@ details[open]>summary svg{rotate:180deg}
 .queue-panel th:nth-child(1){width:6%}
 .queue-panel th:nth-child(2){width:28%}
 .queue-panel th:nth-child(3){width:12%}
-.queue-panel th:nth-child(4),.queue-panel th:nth-child(5){width:14%}
-.queue-panel th:nth-child(6){width:26%}
+.queue-panel th:nth-child(4),.queue-panel th:nth-child(5),.queue-panel th:nth-child(6){width:13%}
+.queue-panel th:nth-child(7){width:24%}
 .focus-mode .playback-bar{position:sticky;top:58px;z-index:20;box-shadow:0 3px 8px #0f172a08}
 .focus-mode .workspace-grid{--workspace-panel-height:calc(100dvh - 150px)}
 .map-panel:fullscreen{height:100dvh!important;display:flex;flex-direction:column}

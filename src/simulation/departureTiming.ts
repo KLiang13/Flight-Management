@@ -1,5 +1,10 @@
 import type { TimelineItem } from './runSimulation';
-import { RUNWAY_ENTRY_MS } from './movementPhysics';
+import { RUNWAY_ENTRY_MS, RUNWAY_MOVEMENT_MS } from './movementPhysics';
+
+/** Moving time from leaving the stand to becoming airborne; stationary holds are separate. */
+export function departureTravelTimeMs(flight: TimelineItem): number {
+  return flight.taxiMinutes * 60_000 + RUNWAY_MOVEMENT_MS;
+}
 
 export function clearanceRequestTime(tsat: number, dayStart: number): number {
   return tsat - 20 * 60_000;

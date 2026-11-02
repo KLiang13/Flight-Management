@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { runSimulation } from './runSimulation';
 import { applyWeatherPeriods, enforceSingleCtot, weatherDclEvents, weatherStatus } from './weather';
-import { departureCtotAt, departureTsatAt } from './departureTiming';
+import { departureCtotAt, departureTsatAt, departureTravelTimeMs } from './departureTiming';
 import { departurePosition } from '../map/playback';
 
 const minute = 60_000;
@@ -11,7 +11,7 @@ const base = () => runSimulation([{ id: 'D', callsign: 'D', aircraftType: 'A321'
 describe('single CTOT operating policy', () => {
   it('allows revised startup after TSAT when taxi still fits CTOT plus ten minutes, including equality', () => {
     const original = base();
-    for (const end of [115, 122]) {
+    for (const end of [115, 119, (original.ctot + 10 * minute - departureTravelTimeMs(original)) / minute]) {
       const periods = [{ start: 95 * minute, end: end * minute }];
       const flight = applyWeatherPeriods([original], [], periods, '25L-25R').flights[0];
       expect(flight.reissuedTsat).toBe(end * minute);
@@ -83,7 +83,7 @@ describe('single CTOT operating policy', () => {
   });
   it('holds an unstarted aircraft when revised startup plus taxi exceeds CTOT plus ten minutes', () => {
     const original = base();
-    for (const end of [123, 125, 140]) {
+    for (const end of [(original.ctot + 10 * minute - departureTravelTimeMs(original) + 1) / minute, 123, 125, 140]) {
       const periods = [{ start: 95 * minute, end: end * minute }];
       const flight = applyWeatherPeriods([original], [], periods, '25L-25R').flights[0];
       expect(flight.wheelsOff).toBe(Infinity);

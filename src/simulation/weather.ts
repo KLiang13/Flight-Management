@@ -6,7 +6,7 @@ import type { SurfacePlan } from './surfaceTraffic';
 import { weatherTrajectory, reserveWeatherMovements, WeatherSurfaceConflict, type WeatherMovement } from './weatherSurface';
 import { getNearestReturnStand, getStandPoint, getTaxiRoutePoints, type MapPoint } from '../map/airfieldGeometry';
 import type { DclEvent } from '../dcl/dclScenario';
-import { departureCtotAt, departureTsatAt, departureWaitMinutesAt } from './departureTiming';
+import { departureCtotAt, departureTsatAt, departureWaitMinutesAt, departureTravelTimeMs } from './departureTiming';
 import { releaseTakeoffRoll, arrivalDelayForBookedRolls, reserveCrossingsBeforeDeparture } from './runwayCoordination';
 import { CTOT_COMMIT_POINT, weatherReturnVia1A } from '../map/surfaceGraph';
 
@@ -109,7 +109,7 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
     const previous = input.previous;
     const slotEnd = previous.ctot + 10 * MINUTE;
     const blocked = input.blockedAt !== undefined || (input.end !== null && (
-      input.heldAtStand ? input.groundReadyAt > slotEnd
+      input.heldAtStand ? input.resumedTaxiStart + departureTravelTimeMs(previous) > slotEnd
         : !input.passedWeatherPoint && forecast > slotEnd));
     const state: WeatherDepartureState = { ...input,
       blockedAt: blocked ? input.blockedAt ?? input.end ?? input.start : undefined,
@@ -377,7 +377,10 @@ function reserveWeatherPlan(flights: TimelineItem[], arrivals: ArrivalTimelineIt
     for (const other of arrivals) if (other.divertedAt === undefined && other.standArrival < until && other.standArrival + 45 * MINUTE > from) unavailable.add(other.stand);
     const stand = getNearestReturnStand(flight.stand, unavailable, flight.wakeCategory, getStandPoint(flight.stand));
     if (unavailable.has(stand)) {
-      return reserveWeatherPlan(flights.map(item => item.id === flight.id ? { ...item, weather: { ...item.weather!, offApron: true } } : item), arrivals, period, runway, horizon, tried);
+      return reserveWeatherPlan(flights.map(item => item.id === flight.id ? { ...item, weather: { ...period, previous: item, heldAtStand: true, groundStand: item.stand,
+        missedAt: null, returnStart: null, returnEnd: null, returnStand: null, returnPath: [],
+        resumedTaxiStart: item.taxiStart, groundReadyAt: item.taxiStart + item.taxiMinutes * MINUTE,
+        revisionAt: period.end, ...item.weather, offApron: true } } : item), arrivals, period, runway, horizon, tried);
     }
     tried.set(flight.id, new Set([...unavailable, stand]));
     const previous = flight.weather?.previous ?? flight;
@@ -391,7 +394,7 @@ function reserveWeatherPlan(flights: TimelineItem[], arrivals: ArrivalTimelineIt
     const movement = reserved.get(flight.id), state = flight.weather;
     return movement && state && !state.passedWeatherPoint && state.end !== null && state.blockedAt === undefined
       && (state.heldAtStand
-        ? state.groundReadyAt + movement.delay > flight.ctot + 10 * MINUTE
+        ? state.resumedTaxiStart + movement.delay + departureTravelTimeMs(flight) > flight.ctot + 10 * MINUTE
         : flight.wheelsOff + movement.delay > flight.ctot + 10 * MINUTE);
   });
   if (newlyExpired.length) {
@@ -599,7 +602,7 @@ export function weatherDclEvents(flights: TimelineItem[], periods: WeatherPeriod
 export function composeWeatherDclEvents(events: DclEvent[], flights: TimelineItem[], periods: WeatherPeriod[]): DclEvent[] {
   const cutoffs = flights.map(flight => {
     let state = flight.weather;
-    while (state?.previous.weather) state = state.previous.weather;
+    while (state?.previous?.weather) state = state.previous.weather;
     const rain = periods.filter(period => events.some(event => event.flightId === flight.id
       && event.time >= period.start && event.time < (period.end ?? Infinity)));
     return { id: flight.id, time: Math.min(state?.start ?? Infinity, ...rain.map(period => period.start)) };
