@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as surfaceGraph from '../map/surfaceGraph';
 import { planSurfaceTraffic, surfacePosition } from './surfaceTraffic';
 import { runSimulation } from './runSimulation';
-import { applyWeatherPeriods } from './weather';
+import { applyWeatherPeriods, weatherDclEvents } from './weather';
 import { departurePosition, arrivalPosition } from '../map/playback';
 import { reserveWeatherMovements } from './weatherSurface';
 import { departureCtotAt, departureTsatAt } from './departureTiming';
@@ -14,6 +14,48 @@ import { scheduleArrivals } from './arrivals';
 import { computePlan } from './planning';
 
 describe('weather route reservations', () => {
+  it('releases a returned aircraft with revised TSAT when its original CTOT remains feasible', async () => {
+    const bytes = readFileSync('public/samples/chuyen-de.xlsx');
+    const file = new File([bytes], 'Chuyên đề.xlsx');
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => Uint8Array.from(bytes).buffer });
+    const workbook = await readFlightFile(file);
+    const baseline = computePlan({ type: 'day', rows: workbook.enrichedRows.filter(isDepartureFromTsn),
+      arrivals: workbook.enrichedRows.filter(isArrivalAtTsn), runway: '25L-25R' });
+    const start = new Date('2026-10-01T13:27:30').getTime();
+    const end = new Date('2026-10-01T13:30:00').getTime();
+    const plan = applyWeatherPeriods(baseline.flights, baseline.arrivals, [{ start, end }], '25L-25R');
+    const target = plan.flights.find(f => f.callsign === 'VJC142')!;
+    expect(target.returnStand).toBeTruthy();
+    expect(target.reissuedTsat).toBe(end);
+    expect(target.reissuedCtot).toBeNull();
+    expect(target.ctot).toBe(baseline.flights.find(f => f.id === target.id)!.ctot);
+    expect(Number.isFinite(target.wheelsOff)).toBe(true);
+    expect(target.secondTaxiStart).toBeGreaterThanOrEqual(target.returnEnd!);
+    expect(target.wheelsOff).toBeLessThanOrEqual(target.ctot + 10 * 60_000 + 1);
+    expect(departureTsatAt(target, end)).toBe(end);
+    expect(weatherDclEvents(plan.flights, [{ start, end }]).some(event =>
+      event.flightId === target.id && event.message.includes('TSAT REVISED'))).toBe(true);
+    const returnMiddle = start + 20_000;
+    const repeated = applyWeatherPeriods(baseline.flights, baseline.arrivals,
+      [{ start, end: start + 10_000 }, { start: returnMiddle, end }], '25L-25R');
+    const again = repeated.flights.find(f => f.id === target.id)!;
+    expect(again.returnStand).toBeTruthy();
+    expect(again.reissuedTsat).toBe(end);
+    expect(Number.isFinite(again.wheelsOff)).toBe(true);
+    expect(again.secondTaxiStart).toBeGreaterThanOrEqual(again.returnEnd!);
+    const before = departurePosition(repeated.flights.find(f => f.id === target.id)!, returnMiddle - 1, 0, '25L-25R').point;
+    const at = departurePosition(again, returnMiddle, 0, '25L-25R').point;
+    expect(Math.hypot(before.x - at.x, before.y - at.y)).toBeLessThan(1);
+    const rainAgain = target.secondTaxiStart! + 30_000;
+    const afterRestart = applyWeatherPeriods(baseline.flights, baseline.arrivals,
+      [{ start, end }, { start: rainAgain, end: rainAgain + 30_000 }], '25L-25R');
+    const nextReturn = afterRestart.flights.find(f => f.id === target.id)!;
+    expect(nextReturn.weather!.groundStand).toBe(target.returnStand);
+    const priorPoint = departurePosition(target, rainAgain, 0, '25L-25R').point;
+    const nextPoint = departurePosition(nextReturn, rainAgain, 0, '25L-25R').point;
+    expect(Math.hypot(priorPoint.x - nextPoint.x, priorPoint.y - nextPoint.y)).toBeLessThan(1);
+  }, 60_000);
+
   it.each([false, true])('isolates the reported route conflict without stopping the day (alternatives blocked: %s)', async (noAlternatives) => {
     const bytes = readFileSync('public/samples/chuyen-de.xlsx');
     const file = new File([bytes], 'Chuyên đề.xlsx');
@@ -22,6 +64,7 @@ describe('weather route reservations', () => {
     const baseline = computePlan({ type: 'day', rows: workbook.enrichedRows.filter(isDepartureFromTsn),
       arrivals: workbook.enrichedRows.filter(isArrivalAtTsn), runway: '25L-25R' });
     const start = 1790836159674, end = 1790836249199;
+    if (noAlternatives) baseline.flights = baseline.flights.map(f => f.callsign === 'VAG678' ? { ...f, ctot: start - 10 * 60_000 } : f);
     const originalRoutes = surfaceGraph.taxiRoutes;
     const routes = noAlternatives ? vi.spyOn(surfaceGraph, 'taxiRoutes').mockImplementation((stand, from) =>
       stand === '99' && (from === undefined || from === 'stand')
@@ -108,7 +151,10 @@ describe('weather route reservations', () => {
       expect(plan.flights).toHaveLength(flights.length);
       const returned = plan.flights.find(flight => flight.id === target.id)!;
       expect(returned.weather?.returnStand, callsign).toBeTruthy();
-      expect(returned.wheelsOff, callsign).toBe(Infinity);
+      if (Number.isFinite(returned.wheelsOff)) {
+        expect(returned.wheelsOff, callsign).toBeLessThanOrEqual(returned.ctot + 10 * 60_000 + 1);
+        expect(returned.reissuedTsat, callsign).toBe(start + 44_000);
+      }
       const returnEnd = returned.returnEnd!;
       let prior = departurePosition(returned, start, 0, '25L-25R').point;
       for (let time = start + 2000; time < returnEnd + 4000; time += 2000) {
@@ -116,7 +162,7 @@ describe('weather route reservations', () => {
         expect(Math.hypot(point.x - prior.x, point.y - prior.y), `${callsign} continuity`).toBeLessThan(20);
         prior = point;
       }
-      if (callsign === 'GENERIC-RETURN') {
+      if (callsign === 'GENERIC-RETURN' && !Number.isFinite(returned.wheelsOff)) {
         const secondStart = returnEnd + 60_000;
         const again = applyWeatherPeriods(flights, baseline.arrivals,
           [{ start, end: start + 44_000 }, { start: secondStart, end: secondStart + 44_000 }], '25L-25R');
@@ -127,7 +173,7 @@ describe('weather route reservations', () => {
       const parked = departurePosition(returned, returnEnd + 1, 0, '25L-25R').point;
       for (const other of plan.flights.filter(flight => flight.id !== returned.id && !flight.weather?.offApron)) {
         for (const time of [returnEnd + 1, other.tsat - 20 * 60_000 + 1, other.taxiStart - 1]) {
-          if (time <= returnEnd || time < other.tsat - 20 * 60_000 || time >= other.wheelsOff) continue;
+          if (time <= returnEnd || time >= (returned.secondTaxiStart ?? Infinity) || time < other.tsat - 20 * 60_000 || time >= other.wheelsOff) continue;
           const point = departurePosition(other, time, 0, '25L-25R').point;
           expect(Math.hypot(point.x - parked.x, point.y - parked.y), `${callsign}/${other.callsign}`)
             .toBeGreaterThanOrEqual((other.wakeCategory === 'H' ? 15 : 9) + (returned.wakeCategory === 'H' ? 15 : 9) - .01);

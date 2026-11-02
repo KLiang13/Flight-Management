@@ -94,7 +94,7 @@ CTOT − 5 phút ≤ thời điểm cất cánh ≤ CTOT + 10 phút
 | Trạng thái khi hết hạn CTOT | Cách xử lý |
 | --- | --- |
 | Còn tại stand | Giữ tại stand, **Không tuân thủ CTOT**, không tự khởi hành lại |
-| Đã lăn, phải quay về stand vì mưa | Về stand trống gần nhất, **Không tuân thủ CTOT**, không cấp giờ mới và không tự bay lại |
+| Đã lăn, phải quay về stand vì mưa | Về stand trống gần nhất; hết mưa xét lại khả năng khởi hành trong CTOT gốc +10 phút. Còn kịp thì cấp TSAT mới bằng giờ hết mưa; không kịp thì giữ tại stand |
 | Đã qua điểm X, chờ tại S1/25L | Ngoại lệ: sau khi hết mưa được tiếp tục vào đường băng, chạy đà và cất cánh theo phân cách; giữ CTOT/TSAT cũ, vẫn ghi không tuân thủ nếu quá hạn |
 
 **Mỗi tàu chỉ được cấp một CTOT trong suốt ngày mô phỏng.** Cột CTOT luôn giữ giá trị ban đầu; không có cấp lại CTOT ngầm hoặc điện văn cấp CTOT mới. Tàu bị giữ tại stand không tự khởi hành lại. Riêng tàu đã qua điểm đèn và chờ S1/25L được tiếp tục khởi hành sau mưa dù đã quá CTOT, vẫn ghi **Không tuân thủ CTOT** và giữ TSAT/CTOT cũ. Ràng buộc phân cách H/M, ưu tiên tàu đến và chiếm dụng đường băng vẫn được áp dụng.
@@ -109,7 +109,7 @@ Khi được cấp **Revised TSAT**, bộ đếm sử dụng mốc mới từ th
 
 ### Thời tiết xấu thủ công
 
-Với tàu chưa khởi động, khi hết mưa mà TSAT cũ chưa đến thì giữ nguyên TSAT. Nếu TSAT đã đến, **TSAT mới bằng đúng thời điểm kết thúc thời tiết xấu**. Hệ thống xét **TSAT mới + thời gian lăn ≤ CTOT gốc + 10 phút**: còn kịp thì cấp TSAT mới và gửi **CLD TSAT REVISED**; bằng đúng mốc +10 phút vẫn được phép lăn. Nếu vượt mốc này, tàu ở nguyên stand, được ghi **Không tuân thủ CTOT** và nhận **CLD AWAIT NEW TSAT**; không có hành động tự cấp TSAT hoặc tự bay lại về sau. Trong giao diện và điều kiện xét TSAT, **thời gian lăn** là tổng thời gian di chuyển từ stand đến khi bay lên: quãng đường lăn ở 20 KTS, vào đường băng và chạy đà cất cánh. Thời gian đứng chờ được tính riêng. Phân cách an toàn có thể làm lùi thời điểm di chuyển thực tế, nhưng không cộng thêm vào TSAT đã cấp; các lượt di chuyển vẫn phải qua kiểm tra đường lăn và đường băng. Hàng chờ hiển thị theo thứ tự **CTOT → Thời gian lăn (phút, giây) → TSAT**. CTOT gốc không đổi. Tàu đã khởi động không nhận TSAT mới.
+Với tàu chưa khởi động, khi hết mưa mà TSAT cũ chưa đến thì giữ nguyên TSAT. Nếu TSAT đã đến, **TSAT mới bằng đúng thời điểm kết thúc thời tiết xấu**. Hệ thống xét **TSAT mới + thời gian lăn ≤ CTOT gốc + 10 phút**: còn kịp thì cấp TSAT mới và gửi **CLD TSAT REVISED**; bằng đúng mốc +10 phút vẫn được phép lăn. Nếu vượt mốc này, tàu ở nguyên stand, được ghi **Không tuân thủ CTOT** và nhận **CLD AWAIT NEW TSAT**; không có hành động tự cấp TSAT hoặc tự bay lại về sau. Trong giao diện và điều kiện xét TSAT, **thời gian lăn** là tổng thời gian di chuyển từ stand đến khi bay lên: quãng đường lăn ở 20 KTS, vào đường băng và chạy đà cất cánh. Thời gian đứng chờ được tính riêng. Phân cách an toàn có thể làm lùi thời điểm di chuyển thực tế, nhưng không cộng thêm vào TSAT đã cấp; các lượt di chuyển vẫn phải qua kiểm tra đường lăn và đường băng. Hàng chờ hiển thị theo thứ tự **CTOT → Thời gian lăn (phút, giây) → TSAT**. CTOT gốc không đổi. Tàu đã qua điểm đèn và chờ tại S1 không nhận TSAT mới. Tàu phải quay về stand được xét cấp TSAT mới bằng giờ hết mưa nếu còn kịp CTOT gốc +10 phút. Lượt lăn lại chỉ bắt đầu sau khi tàu thực sự về tới stand, dùng thời gian di chuyển tính từ stand mới; CTOT không đổi.
 
 1. Chạy lịch và phát lại đến thời điểm muốn tạo tình huống.
 2. Bật **Thời tiết xấu** để dừng cấp phép cất/hạ cánh mới. Tàu đến còn trên không và tiếp cận trong khoảng ngừng tiếp nhận được chuyển hướng sang sân bay khác, không quay lại trong ngày mô phỏng. Tàu đã chạm bánh tiếp tục thoát đường băng và về stand; các lượt tiếp cận bắt đầu sau khi thời tiết tốt có thể được tiếp nhận bình thường.
@@ -118,7 +118,7 @@ Với tàu chưa khởi động, khi hết mưa mà TSAT cũ chưa đến thì g
 
 Các lần bật/tắt được lưu theo dòng thời gian. Khi tua về quá khứ rồi thay đổi thời tiết, kịch bản sau thời điểm đó được tính lại.
 
-Các tuyến quay về, lăn lại và giao cắt sau mưa được kiểm tra bằng cơ chế đặt chỗ theo không gian–thời gian dùng cho đường lăn thông thường. Thứ tự quay về để giải phóng đường lăn được lập riêng với thứ tự cất cánh. Khi mưa chưa có giờ kết thúc, chỉ những tàu đã tới mốc RCD mới được xét chiếm stand. Nếu không tìm được lịch an toàn, phát lại tạm dừng và hiển thị lỗi thay vì tiếp tục chuyển động xung đột.
+Các tuyến quay về, lăn lại và giao cắt sau mưa được kiểm tra bằng cơ chế đặt chỗ theo không gian–thời gian dùng cho đường lăn thông thường. Thứ tự quay về để giải phóng đường lăn được lập riêng với thứ tự cất cánh. Khi mưa chưa có giờ kết thúc, chỉ những tàu đã tới mốc RCD mới được xét chiếm stand. Nếu tuyến hiện tại bị chắn, hệ thống thử tuyến lăn khác. Tàu chưa rời stand không có tuyến khả thi được giữ riêng tại stand và tiếp tục đặt chỗ an toàn cho các chuyến khác; lỗi không thể khôi phục vẫn tạm dừng phát lại thay vì cho chuyển động xung đột.
 
 Stand của tàu bị dừng tiếp tục được giữ chỗ. Tàu xuất hiện sau được xét stand trống tương thích khác; nếu hết khả năng tiếp nhận thì không được vẽ chồng lên tàu tại stand. Tàu đến không có tuyến/stand khả dụng được chuyển hướng. Các tàu chờ S1/25L được giải phóng tuần tự sau mưa khi đường băng an toàn; các chuyến khác không được đi xuyên qua tàu đang chờ.
 
@@ -126,7 +126,7 @@ Quy tắc tính chờ khi có thời tiết xấu:
 
 - Tàu đã rời stand: chỉ cộng phần vượt cuối cửa sổ CTOT đang áp dụng trước đợt mưa, `max(0, ATOT − (CTOT + 10 phút))`. Trong lúc phát lại sử dụng thời điểm hiện tại, dừng bộ đếm khi tàu thực sự bay lên. CTOT 13:20, bay lên 13:46 tương ứng 16 phút chờ; trạng thái là **Không tuân thủ CTOT**.
 - Tàu chưa tới TSAT và bị giữ tại stand: không cộng thời gian tạm dừng do thời tiết; vẫn ghi **Không tuân thủ CTOT** khi vượt CTOT gốc +10 phút, dù chưa khởi động hoặc đã nhận giờ mới. Việc đổi nhãn không phát sinh thêm thao tác quay về hay cấp giờ mới.
-- Trong thời tiết xấu, mọi tàu chưa cất cánh được đánh giá theo CTOT gốc +10 phút. Tàu đã qua ba đèn tiếp tục đến S1/25L trong mưa và được tiếp tục khởi hành sau mưa theo ngoại lệ S1, kể cả khi quá CTOT. Tàu chưa qua ba đèn quay về stand và không tự bay lại.
+- Trong thời tiết xấu, mọi tàu chưa cất cánh được đánh giá theo CTOT gốc +10 phút. Tàu đã qua ba đèn tiếp tục đến S1/25L trong mưa và được tiếp tục khởi hành sau mưa theo ngoại lệ S1, kể cả khi quá CTOT. Tàu chưa qua ba đèn quay về stand; sau mưa chỉ lăn lại nếu lịch từ stand mới còn đáp ứng CTOT gốc +10 phút.
 - Khoảng khóa chạy đà 25L bắt đầu khi tàu đến ở mốc tiếp cận **6 NM**, kết thúc khi tàu đó vượt ngưỡng **25R thêm 65 m**. Các mốc này không vẽ trên sơ đồ.
 
 Bảng **BẢN TIN THỜI TIẾT** nằm phía trên DCL, giữ thông tin đang áp dụng kể cả khi bảng DCL chuyển sang các điện văn mới.
@@ -246,7 +246,7 @@ npm run dev -- --port 4175
 
 Giao diện không có nút ghi workbook. Khi chạy mô phỏng, ứng dụng giữ các trường kết quả trong bộ nhớ và không tự sửa tệp nguồn của người dùng.
 
-Các trường kết quả gồm `TSAT`, `ActualTakeoff`, `RunwayEntry`, `TakeoffRollStart`, `ReissuedCTOT`, `ReissuedTSAT`, `ReturnStand`, `QueueOrder` và `SimulationStatus`, cùng các trường chuẩn hóa phục vụ mô phỏng. Các trường `ReissuedCTOT`/`ReissuedTSAT` không được tạo mới cho tàu đã lăn rồi phải quay về stand vì thời tiết.
+Các trường kết quả gồm `TSAT`, `ActualTakeoff`, `RunwayEntry`, `TakeoffRollStart`, `ReissuedCTOT`, `ReissuedTSAT`, `ReturnStand`, `QueueOrder` và `SimulationStatus`, cùng các trường chuẩn hóa phục vụ mô phỏng. `ReissuedCTOT` luôn để trống. Tàu quay về stand được nhận `ReissuedTSAT` bằng thời điểm hết mưa nếu lịch lăn lại còn đáp ứng CTOT gốc +10 phút.
 
 ## Kiến trúc và phương pháp xếp lịch
 

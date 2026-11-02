@@ -40,7 +40,7 @@ describe('manual adverse weather', () => {
     const result = applyWeatherPeriods(base, [], [{ start: 11 * minute, end: null }], '25L-25R');
     const delayed = result.flights[0];
     expect(delayed.wheelsOff).toBe(Infinity);
-    expect(weatherStatus(delayed, 30 * minute)?.missed).toBe(true);
+    expect(weatherStatus(delayed, 30 * minute)?.missed).toBe(false);
     expect(weatherStatus(delayed, 31 * minute)?.missed).toBe(true);
     expect(delayed.reissuedCtot).toBeNull();
     expect(delayed.weather!.returnStart).toBe(11 * minute);
@@ -98,8 +98,8 @@ describe('manual adverse weather', () => {
     });
     const base = runSimulation([heavy('H1', 10, 100), flight('M1', 12, 102), heavy('H2', 14, 104)]).flights;
     const result = applyWeatherPeriods(base, [], [{ start: 11 * minute, end: 50 * minute }], '25L-25R');
-    expect(result.flights.filter(item => Number.isFinite(item.wheelsOff)).map(item => item.wakeCategory)).toEqual(['M', 'H']);
-    expect(result.flights.find(item => item.id === 'H1')!.wheelsOff).toBe(Infinity);
+    expect(result.flights.filter(item => Number.isFinite(item.wheelsOff)).map(item => item.wakeCategory)).toEqual(['H', 'M', 'H']);
+    expect(Number.isFinite(result.flights.find(item => item.id === 'H1')!.wheelsOff)).toBe(true);
   });
 
   it('preserves past positions across repeated weather toggles', () => {

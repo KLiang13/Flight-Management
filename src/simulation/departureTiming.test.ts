@@ -88,12 +88,12 @@ describe('CTOT displayed at replay time', () => {
     expect(departureCtotAt(recovered, 100 * minute)).toBe(original.ctot);
     expect(departureCtotAt(recovered, 50 * minute)).toBe(original.ctot);
   });
-  it('preserves CTOT and TSAT for a started aircraft returned by rain', () => {
+  it('preserves CTOT and revises TSAT for a feasible returned aircraft', () => {
     const original = flight();
     const recovered = applyWeatherPeriods([original], [], [{ start: original.taxiStart + minute, end: 62 * minute }], '25L-25R').flights[0];
-    expect(recovered.reissuedTsat).toBeNull();
+    expect(recovered.reissuedTsat).toBe(62 * minute);
     expect(recovered.reissuedCtot).toBeNull();
-    expect(departureTsatAt(recovered, 100 * minute)).toBe(original.tsat);
+    expect(departureTsatAt(recovered, 100 * minute)).toBe(62 * minute);
     expect(departureCtotAt(recovered, 100 * minute)).toBe(original.ctot);
   });
 });
