@@ -8,6 +8,14 @@
 
 Mô hình sử dụng biến thời gian cất cánh, biến thứ tự và biến nhị phân thể hiện việc vượt biên CTOT dự kiến. Hàm mục tiêu ưu tiên giảm số trường hợp vượt biên kế hoạch, tiếp theo giảm tổng thời gian cất cánh theo mô hình; biên kế hoạch có dự phòng ba phút so với giới hạn CTOT +10 phút. Thứ tự hai tàu Heavy liên tiếp bị ràng buộc; khoảng cách thời gian giữa các lần cất cánh được đưa vào mô hình. CTOT của chuyến bay được giữ nguyên; thời gian lăn là dữ liệu đầu vào ước lượng.
 
+Cụ thể, gọi \(t_i\) là thời gian cất cánh tương đối của chuyến \(i\), \(u_i\) là biến nhị phân cho biết chuyến vượt biên kế hoạch và \(y_{ij}\) là biến xác định thứ tự giữa hai chuyến. Hàm mục tiêu có dạng:
+
+\[
+\min \; P\sum_i u_i + \sum_i t_i,
+\]
+
+trong đó hệ số \(P\) được chọn từ giới hạn thời gian của bài toán để ưu tiên số chuyến vượt biên kế hoạch. Các ràng buộc yêu cầu chuyến không cất cánh trước thời gian sẵn sàng hoặc trước CTOT −5 phút; các cặp chuyến sử dụng đường băng phải có khoảng phân cách theo thứ tự được chọn. Biến thứ tự bổ sung ràng buộc không để hai chuyến Heavy đứng liền nhau. Mốc dự phòng là tham số của kế hoạch, còn việc ghi nhận tuân thủ vẫn đối chiếu CTOT gốc và cửa sổ −5/+10 phút.
+
 ### 4.1.2. Xử lý lịch và cập nhật khi thời tiết thay đổi
 
 Kết quả MILP được chuyển thành lịch tàu đi, sau đó kết hợp lịch tàu đến và bộ đặt chỗ đường lăn để xây dựng chuyển động trên sơ đồ. Bước đặt chỗ kiểm tra vị trí đỗ, tuyến di chuyển và các giao cắt theo mô hình. Những điều chỉnh sau bước này có thể làm thay đổi kết quả thời gian so với nghiệm ban đầu; vì thế không được coi lịch cuối cùng là nghiệm tối ưu toàn cục đã chứng minh.
@@ -27,5 +35,7 @@ Các bản tin này là dữ liệu mô phỏng hiển thị trong ứng dụng,
 ### 4.2.2. Quy trình tạo và cập nhật
 
 Khi có lịch ngày, hệ thống tạo các sự kiện bản tin theo thời gian mô phỏng. Thời điểm RCD được tính từ TSAT theo quy tắc của ứng dụng; các bản tin tiếp theo được tạo theo kịch bản DCL. Trong thời tiết xấu, thông tin thời tiết được hiển thị độc lập, còn quá trình cấp huấn lệnh được xử lý theo trạng thái chuyến bay.
+
+Đối với chuỗi thông thường, ứng dụng đặt RCD tại TSAT ban đầu trừ 20 phút, sau đó mô phỏng FSM sau 15 giây, CLD sau 40 giây và CDA sau 65 giây tính từ RCD. Nội dung CLD được tạo từ trường dữ liệu của chuyến, gồm callsign, sân bay đích, đường băng và TSAT. Các giá trị SID và mã squawk trong bản tin là thông tin minh họa của kịch bản.
 
 Sau khi thời tiết tốt trở lại, hệ thống kiểm tra CTOT gốc, TSAT và thời gian di chuyển dự kiến. Với trường hợp đủ điều kiện cấp lại TSAT, thời điểm cấp lại và nội dung CLD được cập nhật theo quy tắc mô phỏng. Những chuyến không đủ điều kiện tiếp tục được giữ và hiển thị trạng thái phù hợp. Không phát sinh CTOT mới trong quy trình này.
