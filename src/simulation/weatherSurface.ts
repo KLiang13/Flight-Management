@@ -41,11 +41,24 @@ export type WeatherMovement = {
 export function reserveWeatherMovements(movements: WeatherMovement[]): Map<string, WeatherReserved> {
   const reservations = new Reservations();
   const result = new Map<string, WeatherReserved>();
-  let previousDepartureEnd = -Infinity;
+  const runwayBookings: { start: number; end: number }[] = [];
   for (const movement of [...movements].sort((a, b) => (a.priority ?? 1) - (b.priority ?? 1))) {
     if (!movement.legs.length) continue;
-    let delay = movement.releaseDelay(Math.max(movement.minimumDelay,
-      movement.entryAt === undefined ? 0 : previousDepartureEnd + 12_000 - movement.entryAt), result);
+    const release = (minimum: number) => {
+      let delay = minimum, previous: number;
+      do {
+        previous = delay;
+        delay = movement.releaseDelay(delay, result);
+        if (movement.entryAt !== undefined && Number.isFinite(movement.end)) {
+          for (const booking of runwayBookings) {
+            if (movement.entryAt + delay < booking.end + 12_000 && movement.end + delay + 12_000 > booking.start)
+              delay = Math.max(delay, booking.end + 12_000 - movement.entryAt);
+          }
+        }
+      } while (delay > previous);
+      return delay;
+    };
+    let delay = release(movement.minimumDelay);
     let accepted = false;
     while (delay < 48 * 60 * 60_000) {
       const legs = movement.legs.map(leg => ({ ...leg, start: leg.start + delay, end: leg.end + delay }));
@@ -65,10 +78,10 @@ export function reserveWeatherMovements(movements: WeatherMovement[]): Map<strin
           plan: { visibleFrom: Math.min(previous?.plan.visibleFrom ?? Infinity, legs[0].start),
             visibleUntil: Math.max(previous?.plan.visibleUntil ?? -Infinity, movement.end + delay),
             legs: combined, route: 'weather-reserved' } });
-        if (movement.entryAt !== undefined && Number.isFinite(movement.end)) previousDepartureEnd = movement.end + delay;
+        if (movement.entryAt !== undefined && Number.isFinite(movement.end)) runwayBookings.push({ start: movement.entryAt + delay, end: movement.end + delay });
         accepted = true; break;
       }
-      delay = movement.releaseDelay(delay + Math.max(2000, reservations.lastConflictDelay), result);
+      delay = release(delay + Math.max(2000, reservations.lastConflictDelay));
     }
     if (!accepted) throw new WeatherSurfaceConflict(movement, result);
   }

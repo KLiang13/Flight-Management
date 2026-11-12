@@ -1,5 +1,6 @@
 import { trace } from '../diagnostics/client';
-import { computePlan, type PlanningJob } from './planning';
+import { computeMilpPlan, type computePlan, type PlanningJob } from './planning';
+import { loadMilpSolver } from './milpLoader';
 
 /** Terminating an obsolete worker prevents old weather results replacing a newer choice. */
 export function planAsync(job: PlanningJob, signal?: AbortSignal): Promise<ReturnType<typeof computePlan>> {
@@ -14,7 +15,7 @@ export function planAsync(job: PlanningJob, signal?: AbortSignal): Promise<Retur
     const abort = () => { clean(); reject(new DOMException('Cancelled', 'AbortError')); };
     signal?.addEventListener('abort', abort, { once: true });
     if (typeof Worker === 'undefined') {
-      timer = setTimeout(() => { try { resolve(computePlan(job)); } catch (error) { reject(error); } finally { clean(); } }, 0);
+      timer = setTimeout(async () => { try { const solver = await loadMilpSolver(); if (signal?.aborted) return; resolve(computeMilpPlan(solver, job)); } catch (error) { reject(error); } finally { clean(); } }, 0);
       return;
     }
     try {

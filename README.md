@@ -30,19 +30,25 @@ Giao diện sử dụng tiếng Việt cùng thuật ngữ hàng không. Việc 
 
 | Phân hệ | Khả năng hiện có |
 | --- | --- |
-| **Nguồn dữ liệu** | Bốn workbook tích hợp; nhập `.xlsx`, `.xls`, `.csv`; chọn ngày khai thác; đọc các sheet DEP/ARR nếu có |
+| **Nguồn dữ liệu** | Ba workbook tích hợp; nhập `.xlsx`, `.xls`, `.csv`; chọn ngày khai thác; đọc các sheet DEP/ARR nếu có |
 | **Parking chart** | Hiển thị vị trí tàu tại stand, đường lăn và đường băng; chọn chuyến; phóng to, thu nhỏ, đặt lại bản đồ |
 | **Tàu đi** | Rời stand, lăn đến S1, vào 25L, chờ tàu đến vượt mốc 25R khi cần, chạy đà và cất cánh |
 | **Tàu đến** | Tiếp cận 25R, hạ cánh, ưu tiên thoát P4, dùng P5 khi tuyến ưu tiên bận, chờ cắt 25L rồi lăn về stand |
 | **Điều phối** | Xét cửa sổ CTOT, hạng H/M, khả năng tiếp nhận của stand và chiếm dụng tuyến đường lăn |
 | **Thời tiết** | Bật/tắt thời tiết xấu thủ công; xử lý hết hạn CTOT; tự khôi phục lịch khi thời tiết tốt trở lại |
 | **Điện văn DCL** | RCD → FSM → CLD → CDA; luôn chấp nhận yêu cầu; thông báo hết hạn và TSAT; ẩn điện văn cấp CTOT |
-| **Phát lại** | Phát/tạm dừng, tua thời gian, tốc độ 1×, 10×, 30×, 60×; tiếp tục sang ngày kế tiếp nếu lịch kết thúc muộn |
+| **Phát lại** | Phát/tạm dừng, tua thời gian, tốc độ 1×, 5×, 10×, 30×, 60×; tiếp tục sang ngày kế tiếp nếu lịch kết thúc muộn |
 | **Theo dõi kết quả** | Tổng chuyến, tổng thời gian chờ, số chuyến không tuân thủ CTOT; hàng chờ có tìm kiếm và lọc trạng thái |
 
 ## Quy tắc điều phối
 
 Các quy tắc dưới đây mô tả **mô hình đang được cài đặt trong ứng dụng**.
+
+### Lập lịch MILP
+
+Hệ thống sử dụng HiGHS/WebAssembly để lập thứ tự tàu đi trong worker của trình duyệt. Mô hình xét thời gian sẵn sàng, CTOT, phân cách đường băng và thứ tự tàu Heavy. Với bộ Chuyên đề 70 chuyến đi, mô hình được giải theo toàn bộ tập chuyến; các tập lớn hơn được chia thành cửa sổ. Sau khi giải, hệ thống kết hợp lịch tàu đến và kiểm tra tuyến lăn, stand và giao cắt theo mô hình mô phỏng.
+
+Khi thời tiết thay đổi, bộ giải hỗ trợ sắp xếp các chuyến còn lại; các quy tắc thời tiết và đặt chỗ tuyến xử lý trạng thái và xung đột. Những bước sau bộ giải có thể điều chỉnh lịch nên lịch hiển thị không được coi là nghiệm tối ưu toàn cục. Nếu HiGHS chạm giới hạn thời gian, chỉ nghiệm qua kiểm tra mới được sử dụng; kết quả đó không được coi là đã chứng minh tối ưu.
 
 ### Luồng tàu bay
 
@@ -265,9 +271,7 @@ flowchart TD
     H --> K[Hàng chờ và chỉ số]
 ```
 
-Bộ điều phối sử dụng **heuristic chọn chuyến khả dụng**, xét cửa sổ CTOT và ràng buộc H/M, kết hợp mạng đường lăn và đặt chỗ **theo không gian–thời gian**. Tuyến di chuyển được nội suy trên hình học chart; điểm giao và khoảng chiếm dụng được xét khi dựng lịch vật lý.
-
-Phương pháp ưu tiên tốc độ xử lý và khả năng phát lại nhiều chuyến. **Phiên bản hiện tại chưa tích hợp bộ giải MILP và không cung cấp chứng nhận tối ưu toàn cục.** Kết quả phụ thuộc dữ liệu, số stand, tuyến được mô hình hóa và ràng buộc đang áp dụng.
+Bộ điều phối sử dụng **MILP với HiGHS** để lập thứ tự khởi hành, kết hợp mạng đường lăn và đặt chỗ **theo không gian–thời gian**. Tuyến di chuyển được nội suy trên hình học chart; điểm giao và khoảng chiếm dụng được xét khi dựng lịch vật lý. Kết quả cuối cùng phụ thuộc dữ liệu, số stand, tuyến được mô hình hóa và các quy tắc xử lý sau bộ giải.
 
 ### Công nghệ
 
@@ -286,7 +290,7 @@ Phương pháp ưu tiên tốc độ xử lý và khả năng phát lại nhiề
 Flight-Management/
 ├── public/
 │   ├── assets/                  # Parking chart và tài nguyên hình ảnh
-│   └── samples/                 # Bốn workbook tích hợp
+│   └── samples/                 # Ba workbook tích hợp
 ├── src/
 │   ├── App.tsx                  # Giao diện, phát lại và liên kết các phân hệ
 │   ├── data/                    # Đọc/ghi tệp, chuẩn hóa và phân bổ stand
@@ -376,7 +380,7 @@ npx vercel@latest --prod
 
 Một lựa chọn khác là kết nối repository GitHub trong project Vercel và cấu hình nhánh production để tự triển khai khi push. Push lên GitHub chỉ kích hoạt triển khai tự động khi kết nối Git này đã được thiết lập.
 
-Bốn workbook trong `public/samples/` phải được phát hành cùng ứng dụng. Các PDF tham khảo và tệp cục bộ không cần cho website được loại khỏi luồng tải nguồn bằng [`.vercelignore`](.vercelignore).
+Ba workbook trong `public/samples/` phải được phát hành cùng ứng dụng. Các PDF tham khảo và tệp cục bộ không cần cho website được loại khỏi luồng tải nguồn bằng [`.vercelignore`](.vercelignore).
 
 ## Phạm vi và giới hạn
 

@@ -1,4 +1,6 @@
 import type { TimelineItem } from './runSimulation';
+import type { MilpSolver } from './milpDeparture';
+import { solveRollingMilp } from './milpRolling';
 import { RUNWAY_MOVEMENT_MS, TAKEOFF_ROLL_MS, taxiDuration } from './movementPhysics';
 import type { ArrivalTimelineItem } from './arrivals';
 import { departurePosition, arrivalPosition } from '../map/playback';
@@ -29,7 +31,7 @@ function pathLength(path: MapPoint[]): number {
 
 type Reservation = { stand: string; from: number; until: number; id: string };
 
-function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[], period: WeatherPeriod, runway: string, horizon: number) {
+function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[], period: WeatherPeriod, runway: string, horizon: number, solver?: MilpSolver) {
   const release = period.end ?? Infinity;
   const diverted = incoming.filter(arrival => arrival.divertedAt !== undefined
     || (arrival.touchdown >= period.start && arrival.approachStart < release))
@@ -214,10 +216,20 @@ function applyPeriod(departures: TimelineItem[], incoming: ArrivalTimelineItem[]
     const earliest = (flight: TimelineItem) => currentState(flight)
       ? Math.max(flight.ctot - 5 * MINUTE, release + MOVEMENT, currentState(flight)!.groundReadyAt + MOVEMENT)
       : flight.wheelsOff;
+    const milpOrder = new Map<string, number>();
+    if (solver) {
+      const candidates = pending.filter(flight => Number.isFinite(earliest(flight)));
+      const decision = solveRollingMilp(solver, candidates.map(flight => ({ id: flight.id,
+        ready: earliest(flight) / MINUTE, ctot: flight.ctot / MINUTE, wake: flight.wakeCategory })), MOVEMENT / MINUTE, 6,
+        { previousWake: completed.at(-1)?.wakeCategory, available: Number.isFinite(available) ? available / MINUTE : undefined });
+      decision.scheduled.forEach((flight, index) => milpOrder.set(flight.id, index));
+    }
     while (pending.length) {
       const expired = (flight: TimelineItem) => flight.ctot + 10 * MINUTE < Math.max(release, available, earliest(flight));
       pending.sort((a, b) => Number(Boolean(currentState(b)?.passedWeatherPoint)) - Number(Boolean(currentState(a)?.passedWeatherPoint))
         || Number(expired(a)) - Number(expired(b))
+        || Math.max(earliest(a), available) - Math.max(earliest(b), available)
+        || (solver ? (milpOrder.get(a.id) ?? Infinity) - (milpOrder.get(b.id) ?? Infinity) : 0)
         || earliest(a) - earliest(b)
         || (a.reissuedTsat !== null && a.reissuedTsat === b.reissuedTsat ? a.taxiMinutes - b.taxiMinutes || a.ctot - b.ctot : 0)
         || a.order - b.order);
@@ -324,8 +336,22 @@ function reserveWeatherPlan(flights: TimelineItem[], arrivals: ArrivalTimelineIt
     const start = Math.max(period.start, arrival.approachStart), end = arrival.standArrival + 45 * MINUTE;
     movements.push({ id: arrival.id, radius: arrival.wakeCategory === 'H' ? 15 : 9, start, end, minimumDelay: 0, holdAtStart: arrival.approachStart <= period.start, priority: arrival.approachStart <= period.start ? 0 : 2,
       legs: weatherTrajectory(start, end, time => arrivalPosition(arrival, time), [arrival.touchdown, arrival.landingEnd, arrival.p5HoldAt, arrival.crossingStart, arrival.crossingEnd, arrival.standArrival]),
-      releaseDelay: (delay, booked) => arrivalDelayForBookedRolls(arrival, delay,
-        flights.filter(flight => booked.has(flight.id)).map(flight => flight.takeoffRollStart + booked.get(flight.id)!.delay)) });
+      releaseDelay: (delay, booked) => {
+        const departures = flights.filter(flight => booked.has(flight.id) && Number.isFinite(flight.wheelsOff))
+          .map(flight => ({ entry: flight.runwayEntryStart + booked.get(flight.id)!.delay,
+            off: flight.wheelsOff + booked.get(flight.id)!.delay, roll: flight.takeoffRollStart + booked.get(flight.id)!.delay }))
+          .sort((a, b) => a.entry - b.entry);
+        let adjusted = delay, previous: number;
+        do {
+          previous = adjusted;
+          adjusted = arrivalDelayForBookedRolls(arrival, adjusted, departures.map(flight => flight.roll));
+          for (const flight of departures) {
+            if (arrival.crossingStart + adjusted < flight.off + 10_000 && arrival.crossingEnd + adjusted > flight.entry)
+              adjusted = Math.max(adjusted, flight.off + 10_000 - arrival.crossingStart);
+          }
+        } while (adjusted > previous);
+        return adjusted;
+      } });
   }
   const ordered = [...flights].sort((a, b) => a.order - b.order);
   for (const flight of ordered) {
@@ -353,13 +379,26 @@ function reserveWeatherPlan(flights: TimelineItem[], arrivals: ArrivalTimelineIt
     const legs = weatherTrajectory(start, end, time => departurePosition(flight, time, Math.max(0, queueIndex(time)), runway), checkpoints);
     if (!Number.isFinite(flight.wheelsOff)) legs.push({ start: end, end: Infinity, points: [departurePosition(flight, end, Math.max(0, queueIndex(end)), runway).point], phase: 'chờ thời tiết tốt' });
     // Permanent occupants, including returned aircraft, own their stands before future RCD requests.
-    movements.push({ id: flight.id, priority: state?.blockedAt !== undefined ? -1 + (flight.tsat - 20 * MINUTE - period.start) / MINUTE / 1_000_000 : 1, radius: flight.wakeCategory === 'H' ? 15 : 9, start,
+    const unchangedFuture = period.end !== null && flight.tsat > period.end && !state?.returnStand && !state?.passedWeatherPoint;
+    movements.push({ id: flight.id, priority: state?.blockedAt !== undefined ? -1 + (flight.tsat - 20 * MINUTE - period.start) / MINUTE / 1_000_000 : unchangedFuture ? 0.5 : 1, radius: flight.wakeCategory === 'H' ? 15 : 9, start,
       end: Number.isFinite(flight.wheelsOff) ? end : Infinity, legs, minimumDelay: 0,
       entryAt: Number.isFinite(flight.runwayEntryStart) ? flight.runwayEntryStart : undefined,
       releaseDelay: (desired, booked) => {
-        const delay = Math.max(desired, booked.get(flight.id)?.returnDelay ?? 0);
+        let delay = Math.max(desired, booked.get(flight.id)?.returnDelay ?? 0);
         if (!Number.isFinite(flight.takeoffRollStart)) return delay;
-        return releaseTakeoffRoll(flight.takeoffRollStart + delay, arrivals.filter(item => item.divertedAt === undefined)) - flight.takeoffRollStart;
+        const crossings = arrivals.filter(item => item.divertedAt === undefined && booked.has(item.id))
+          .map(item => ({ start: item.crossingStart + booked.get(item.id)!.delay, end: item.crossingEnd + booked.get(item.id)!.delay }))
+          .sort((a, b) => a.start - b.start);
+        let previous: number;
+        do {
+          previous = delay;
+          delay = Math.max(delay, releaseTakeoffRoll(flight.takeoffRollStart + delay, arrivals.filter(item => item.divertedAt === undefined)) - flight.takeoffRollStart);
+          for (const crossing of crossings) {
+            if (flight.runwayEntryStart + delay < crossing.end && flight.wheelsOff + delay + 10_000 > crossing.start)
+              delay = Math.max(delay, crossing.end - flight.runwayEntryStart);
+          }
+        } while (delay > previous);
+        return delay;
       } });
   }
   let reserved: ReturnType<typeof reserveWeatherMovements>;
@@ -534,8 +573,8 @@ export function enforceSingleCtot(flights: TimelineItem[]): TimelineItem[] {
   return flights.map(flight => result.get(flight.id)!);
 }
 
-export function applyWeatherPeriods(flights: TimelineItem[], arrivals: ArrivalTimelineItem[], periods: WeatherPeriod[], runway: string, horizon?: number) {
-  return periods.reduce((plan, period) => applyPeriod(plan.flights, plan.arrivals, period, runway, period.end === null ? horizon ?? period.start : Infinity), { flights, arrivals });
+export function applyWeatherPeriods(flights: TimelineItem[], arrivals: ArrivalTimelineItem[], periods: WeatherPeriod[], runway: string, horizon?: number, solver?: MilpSolver) {
+  return periods.reduce((plan, period) => applyPeriod(plan.flights, plan.arrivals, period, runway, period.end === null ? horizon ?? period.start : Infinity, solver), { flights, arrivals });
 }
 
 export function departureAtTime(flight: TimelineItem, time: number): TimelineItem {

@@ -5,6 +5,8 @@ import { applyWeatherPeriods, enforceSingleCtot } from './weather';
 import type { TimelineItem } from './runSimulation';
 import type { ArrivalTimelineItem } from './arrivals';
 import type { WeatherPeriod } from './weather';
+import type { MilpSolver } from './milpDeparture';
+import { computeMilpDayCandidate } from './milpPlan';
 
 export type PlanningJob =
   | { type: 'day'; rows: Record<string, unknown>[]; arrivals: Record<string, unknown>[]; runway: string }
@@ -20,5 +22,12 @@ export function computePlan(job: PlanningJob) {
     if (checked.filter(flight => !Number.isFinite(flight.wheelsOff)).length === flights.filter(flight => !Number.isFinite(flight.wheelsOff)).length) return { flights: checked, arrivals: physical.arrivals };
     flights = checked;
   }
+}
+
+/** Run the MILP dispatch path; geometry and operational reservations remain
+ * independent checks after optimization. */
+export function computeMilpPlan(solver: MilpSolver, job: PlanningJob) {
+  if (job.type === 'weather') return applyWeatherPeriods(job.flights, job.arrivals, job.periods, job.runway, job.horizon, solver);
+  return computeMilpDayCandidate(solver, job.rows, job.arrivals, job.runway);
 }
 
